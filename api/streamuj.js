@@ -1,5 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const QUALITY_LABELS = {
   HD: 'HD', SD: 'SD', FHD: '1080p', UHD: '4K', KINORIP: 'KinoRip', TVRIP: 'TVRip'
@@ -12,6 +14,8 @@ const FLAG_UNICODE = {
 const ISO_LANG = { CZ: 'cze', CS: 'cze', CZE: 'cze', SK: 'slk', SLK: 'slk', EN: 'eng', ENG: 'eng' };
 const LANG_ORDER = ['CZ', 'SK', 'EN'];
 const QUALITY_ORDER = ['UHD', 'FHD', 'HD', 'SD', 'KINORIP', 'TVRIP'];
+const PUBLIC_SUBTITLE_DIR = path.join(__dirname, '..', 'public', 'subtitle-cache');
+const MAX_SUBTITLE_BYTES = 2 * 1024 * 1024;
 
 function md5(value) {
   return crypto.createHash('md5').update(String(value || '')).digest('hex');
@@ -108,6 +112,11 @@ class StreamujApi {
     this.provider = options.provider || 'www.streamuj.tv';
     this.location = String(options.location) === '2' ? '2' : '1';
     this.debugRaw = options.debugRaw === true;
+    this.publicBaseUrl = String(
+      options.publicBaseUrl ||
+      process.env.PUBLIC_BASE_URL ||
+      (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : '')
+    ).replace(/\/+$/, '');
     this.http = axios.create({
       timeout: 20000,
       maxContentLength: 2 * 1024 * 1024,
@@ -130,7 +139,6 @@ class StreamujApi {
   }
 
   async getSubtitleTracks(linkId) {
-    // d=19 je cesta ověřená v původním funkčním subtitle addonu.
     let data = await this.getVideoLinks(linkId, 19);
     if ((!data || !data.URL || typeof data.URL !== 'object')) data = await this.getVideoLinks(linkId, 18);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
@@ -169,7 +177,47 @@ class StreamujApi {
     const body = typeof response.data === 'string' ? response.data : String(response.data || '');
     if (!body || /^\s*</.test(body)) throw new Error('Streamuj nevrátil platná textová data titulků.');
     const vtt = convertSrtToVtt(body);
-    return Buffer.from(vtt, 'utf8');
+    const buffer = Buffer.from(vtt, 'utf8');
+    if (buffer.length > MAX_SUBTITLE_BYTES) throw new Error('Soubor titulků je příliš velký.');
+    return buffer;
+  }
+
+  async preparePublicSubtitle(track) {
+    if (!track || !track.sourceUrl) return null;
+    if (!this.publicBaseUrl) {
+      console.warn('[subtitle] PUBLIC_BASE_URL/RENDER_EXTERNAL_HOSTNAME není k dispozici; používám přímou URL.');
+      return { id: track.id, lang: track.lang, url: track.sourceUrl };
+    }
+
+    try {
+      const body = await this.downloadSubtitleVtt(track.sourceUrl);
+      const hash = crypto.createHash('sha256').update(body).digest('hex');
+      await fs.promises.mkdir(PUBLIC_SUBTITLE_DIR, { recursive: true });
+      const file = path.join(PUBLIC_SUBTITLE_DIR, `${hash}.vtt`);
+      try {
+        await fs.promises.access(file, fs.constants.R_OK);
+      } catch (_) {
+        await fs.promises.writeFile(file, body, { mode: 0o600 });
+      }
+      return {
+        id: `file_v1_${hash}_${track.lang}`,
+        lang: track.lang,
+        url: `${this.publicBaseUrl}/subtitle-cache/${hash}.vtt`
+      };
+    } catch (error) {
+      console.warn(`[subtitle] Serverová příprava selhala: ${error.message}`);
+      return null;
+    }
+  }
+
+  async preparePublicSubtitles(tracks) {
+    const prepared = await Promise.all((tracks || []).map(track => this.preparePublicSubtitle(track)));
+    const seen = new Set();
+    return prepared.filter(track => {
+      if (!track || seen.has(track.id)) return false;
+      seen.add(track.id);
+      return true;
+    });
   }
 
   async resolveIndirectUrl(url) {
@@ -188,13 +236,12 @@ class StreamujApi {
     const data = await this.getVideoLinks(linkId, 18);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
     const result = [];
-    const prepareSubtitles = typeof options.prepareSubtitles === 'function' ? options.prepareSubtitles : null;
 
     for (const [rawLang, langData] of Object.entries(data.URL)) {
       if (!langData || typeof langData !== 'object') continue;
       const lang = normalizeLang(rawLang);
       const rawSubs = collectSubtitles(langData, rawLang);
-      const subtitles = prepareSubtitles ? await prepareSubtitles(rawSubs) : rawSubs.map(sub => ({ id: sub.id, lang: sub.lang, url: sub.directUrl }));
+      const subtitles = await this.preparePublicSubtitles(rawSubs);
 
       for (const [rawQuality, indirectUrl] of Object.entries(langData)) {
         if (rawQuality === 'subtitles' || typeof indirectUrl !== 'string' || !/^https?:\/\//i.test(indirectUrl)) continue;
