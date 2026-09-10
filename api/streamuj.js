@@ -1,7 +1,5 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 
 const QUALITY_LABELS = {
   HD: 'HD', SD: 'SD', FHD: '1080p', UHD: '4K', KINORIP: 'KinoRip', TVRIP: 'TVRip'
@@ -11,25 +9,32 @@ const FLAG_UNICODE = {
   SK: '\u{1F1F8}\u{1F1F0}', SLK: '\u{1F1F8}\u{1F1F0}',
   EN: '\u{1F1EC}\u{1F1E7}', ENG: '\u{1F1EC}\u{1F1E7}'
 };
-const ISO_LANG = { CZ: 'cze', CS: 'cze', CZE: 'cze', SK: 'slk', SLK: 'slk', EN: 'eng', ENG: 'eng' };
+const ISO_LANG = {
+  CZ: 'cze', CS: 'cze', CZE: 'cze', CES: 'cze',
+  SK: 'slk', SLK: 'slk', SLO: 'slk',
+  EN: 'eng', ENG: 'eng',
+  DE: 'ger', GER: 'ger', DEU: 'ger',
+  FR: 'fre', FRE: 'fre', FRA: 'fre',
+  ES: 'spa', SPA: 'spa', IT: 'ita', ITA: 'ita',
+  PL: 'pol', POL: 'pol', HU: 'hun', HUN: 'hun'
+};
 const LANG_ORDER = ['CZ', 'SK', 'EN'];
 const QUALITY_ORDER = ['UHD', 'FHD', 'HD', 'SD', 'KINORIP', 'TVRIP'];
-const PUBLIC_SUBTITLE_DIR = path.join(__dirname, '..', 'public', 'subtitle-cache');
-const MAX_SUBTITLE_BYTES = 2 * 1024 * 1024;
 
 function md5(value) {
   return crypto.createHash('md5').update(String(value || '')).digest('hex');
 }
 function normalizeLang(value) {
   const lang = String(value || '').trim().toUpperCase();
-  if (lang === 'CS' || lang === 'CZE') return 'CZ';
-  if (lang === 'SLK') return 'SK';
+  if (lang === 'CS' || lang === 'CZE' || lang === 'CES') return 'CZ';
+  if (lang === 'SLK' || lang === 'SLO') return 'SK';
   if (lang === 'ENG') return 'EN';
   return lang || '??';
 }
 function flagFor(lang) { return FLAG_UNICODE[normalizeLang(lang)] || '🌐'; }
 function isoFor(lang) {
-  return ISO_LANG[String(lang || '').trim().toUpperCase()] || ISO_LANG[normalizeLang(lang)] || String(lang || 'und').toLowerCase();
+  const raw = String(lang || '').trim().toUpperCase();
+  return ISO_LANG[raw] || ISO_LANG[normalizeLang(raw)] || (raw ? raw.toLowerCase() : 'und');
 }
 function langIndex(lang) {
   const index = LANG_ORDER.indexOf(normalizeLang(lang));
@@ -39,19 +44,59 @@ function qualityIndex(quality) {
   const index = QUALITY_ORDER.indexOf(String(quality || '').toUpperCase());
   return index === -1 ? 999 : index;
 }
-function collectSubtitles(langData, branch = '') {
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&gt;/gi, '>')
+    .replace(/&lt;/gi, '<');
+}
+function normalizeSubtitleSourceUrl(value, provider = 'www.streamuj.tv') {
+  try {
+    const url = new URL(decodeHtmlEntities(value), `https://${provider}/`);
+    if (!(url.hostname === 'streamuj.tv' || url.hostname.endsWith('.streamuj.tv'))) return null;
+    if (url.username || url.password) return null;
+    if (url.protocol === 'http:') url.protocol = 'https:';
+    if (url.protocol !== 'https:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+function collectSubtitles(langData, branch = '', provider = 'www.streamuj.tv') {
   const subtitles = langData && langData.subtitles;
   if (!subtitles || typeof subtitles !== 'object') return [];
   return Object.entries(subtitles)
-    .filter(([, url]) => typeof url === 'string' && /^https?:\/\//i.test(url))
-    .map(([lang, url], index) => ({
-      id: `sosac-${normalizeLang(lang).toLowerCase()}-${index + 1}`,
-      lang: isoFor(lang),
-      sourceLang: normalizeLang(lang),
-      branch: normalizeLang(branch),
-      sourceUrl: url,
-      directUrl: url
-    }));
+    .map(([lang, url], index) => {
+      const sourceUrl = typeof url === 'string' ? normalizeSubtitleSourceUrl(url, provider) : null;
+      if (!sourceUrl) return null;
+      return {
+        id: `sosac-${normalizeLang(lang).toLowerCase()}-${index + 1}`,
+        lang: isoFor(lang),
+        sourceLang: normalizeLang(lang),
+        branch: normalizeLang(branch),
+        sourceUrl,
+        directUrl: sourceUrl
+      };
+    })
+    .filter(Boolean);
+}
+function collectSubtitleTracksFromData(data, provider = 'www.streamuj.tv') {
+  if (!data || !data.URL || typeof data.URL !== 'object') return [];
+  const result = [];
+  const seen = new Set();
+  for (const [branch, langData] of Object.entries(data.URL)) {
+    for (const sub of collectSubtitles(langData, branch, provider)) {
+      const key = `${sub.lang}:${sub.sourceUrl}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(sub);
+    }
+  }
+  const priority = { cze: 0, slk: 1, eng: 2 };
+  result.sort((a, b) => (priority[a.lang] ?? 3) - (priority[b.lang] ?? 3));
+  return result.slice(0, 12);
 }
 function buildDescription(stream) {
   const audio = `🎧 ${flagFor(stream.lang)} ${normalizeLang(stream.lang)}`;
@@ -81,11 +126,16 @@ function convertSrtToVtt(content) {
   if (/^WEBVTT(?:[ \t]|\n|$)/i.test(text)) return text + '\n';
 
   const lines = text.split('\n');
-  const out = [];
-  let cue = [];
+  const cues = [];
+  let current = null;
   const timeLine = /^(?:(\d+):)?([0-5]\d):([0-5]\d)[,.](\d{3})\s*-->\s*(?:(\d+):)?([0-5]\d):([0-5]\d)[,.](\d{3})(.*)$/;
   const fmt = (h, m, s, ms) => `${String(Number(h || 0)).padStart(2, '0')}:${m}:${s}.${ms}`;
-  const flush = () => { if (cue.length) { out.push(cue.join('\n')); cue = []; } };
+  const flush = () => {
+    if (!current) return;
+    const body = current.body.join('\n').replace(/\n[ \t]*\n+/g, '\n').trim();
+    if (body) cues.push(`${current.time}\n${body}`);
+    current = null;
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -93,15 +143,18 @@ function convertSrtToVtt(content) {
     const m = timeLine.exec(raw.trim());
     if (m) {
       flush();
-      cue.push(`${fmt(m[1], m[2], m[3], m[4])} --> ${fmt(m[5], m[6], m[7], m[8])}${m[9] || ''}`);
+      current = {
+        time: `${fmt(m[1], m[2], m[3], m[4])} --> ${fmt(m[5], m[6], m[7], m[8])}${m[9] || ''}`,
+        body: []
+      };
       continue;
     }
-    if (cue.length) cue.push(raw);
+    if (current) current.body.push(raw);
     else if (raw.trim()) throw new Error('Neplatný formát titulků.');
   }
   flush();
-  if (!out.length) throw new Error('V souboru nebyly nalezeny titulky.');
-  return `WEBVTT\n\n${out.join('\n\n')}\n`;
+  if (!cues.length) throw new Error('V souboru nebyly nalezeny titulky.');
+  return `WEBVTT\n\n${cues.join('\n\n')}\n`;
 }
 
 class StreamujApi {
@@ -112,11 +165,6 @@ class StreamujApi {
     this.provider = options.provider || 'www.streamuj.tv';
     this.location = String(options.location) === '2' ? '2' : '1';
     this.debugRaw = options.debugRaw === true;
-    this.publicBaseUrl = String(
-      options.publicBaseUrl ||
-      process.env.PUBLIC_BASE_URL ||
-      (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : '')
-    ).replace(/\/+$/, '');
     this.http = axios.create({
       timeout: 20000,
       maxContentLength: 2 * 1024 * 1024,
@@ -124,6 +172,9 @@ class StreamujApi {
     });
   }
   isConfigured() { return Boolean(this.username && this.hasPassword && this.passwordHash); }
+  authCookie() {
+    return `pass=${encodeURIComponent(this.username)}%3A%3A%3A${this.passwordHash}; sublanguage=1; quality=1; videolanguage=cs`;
+  }
 
   async getVideoLinks(linkId, device = 18) {
     if (!this.isConfigured() || !linkId) return null;
@@ -131,22 +182,82 @@ class StreamujApi {
       params: { action: 'get-video-links', d: device, link: linkId, login: this.username, password: this.passwordHash, location: this.location }
     });
     const data = response.data;
-    try { console.log(`[streamuj summary link=${linkId}] ${JSON.stringify(safeResponseSummary(data))}`); } catch (_) {}
+    try { console.log(`[streamuj summary d=${device} link=${linkId}] ${JSON.stringify(safeResponseSummary(data))}`); } catch (_) {}
     if (this.debugRaw) {
-      try { console.log(`[streamuj RAW link=${linkId}]\n${JSON.stringify(data, null, 2).slice(0, 12000)}`); } catch (_) {}
+      try { console.log(`[streamuj RAW d=${device} link=${linkId}]\n${JSON.stringify(data, null, 2).slice(0, 12000)}`); } catch (_) {}
     }
     return data;
   }
 
-  async getSubtitleTracks(linkId) {
-    let data = await this.getVideoLinks(linkId, 19);
-    if ((!data || !data.URL || typeof data.URL !== 'object')) data = await this.getVideoLinks(linkId, 18);
-    if (!data || !data.URL || typeof data.URL !== 'object') return [];
+  async getSubtitleTracksFromHtml(linkId) {
+    if (!/^[a-zA-Z0-9]{10,40}$/.test(String(linkId || ''))) return [];
+    try {
+      const response = await this.http.get(`https://${this.provider}/video/${encodeURIComponent(linkId)}?remote=1`, {
+        responseType: 'text',
+        transformResponse: [data => data],
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          Referer: `https://${this.provider}/video/${encodeURIComponent(linkId)}`,
+          Cookie: this.authCookie()
+        }
+      });
+      const html = typeof response.data === 'string' ? response.data : String(response.data || '');
+      const tracks = [];
+      const seen = new Set();
+      const add = (rawUrl, rawLang) => {
+        const sourceUrl = normalizeSubtitleSourceUrl(rawUrl, this.provider);
+        if (!sourceUrl) return;
+        const lang = isoFor(rawLang);
+        const key = `${lang}:${sourceUrl}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        tracks.push({
+          id: `streamuj-html-${String(linkId)}-${tracks.length + 1}`,
+          lang,
+          sourceLang: normalizeLang(rawLang),
+          branch: 'HTML',
+          sourceUrl,
+          directUrl: sourceUrl
+        });
+      };
 
+      const subRegex = /\bsub\d+\s*:\s*["']([^"']+)["']/gi;
+      let match;
+      while ((match = subRegex.exec(html)) !== null) {
+        const value = decodeHtmlEntities(match[1]);
+        const splitAt = value.indexOf('>');
+        if (splitAt >= 0) add(value.slice(splitAt + 1).trim(), value.slice(0, splitAt).trim());
+      }
+      if (!tracks.length) {
+        const directRegex = /(https?:\/\/[^"'\s<>]+\?[^"'\s<>]*streamuj=subtitles[^"'\s<>]*)/gi;
+        while ((match = directRegex.exec(html)) !== null) add(match[1], '');
+      }
+      console.log(`[subtitle html] link=${linkId} tracks=${tracks.length}`);
+      return tracks.slice(0, 12);
+    } catch (error) {
+      console.warn(`[subtitle html] link=${linkId} selhalo: ${error.message}`);
+      return [];
+    }
+  }
+
+  async getSubtitleTracks(linkId) {
     const tracks = [];
     const seen = new Set();
-    for (const [branch, langData] of Object.entries(data.URL)) {
-      for (const sub of collectSubtitles(langData, branch)) {
+    for (const device of [19, 18]) {
+      try {
+        const data = await this.getVideoLinks(linkId, device);
+        for (const sub of collectSubtitleTracksFromData(data, this.provider)) {
+          const key = `${sub.lang}:${sub.sourceUrl}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          tracks.push(sub);
+        }
+      } catch (error) {
+        console.warn(`[subtitle] Player API d=${device} link=${linkId} selhalo: ${error.message}`);
+      }
+    }
+    if (!tracks.length) {
+      for (const sub of await this.getSubtitleTracksFromHtml(linkId)) {
         const key = `${sub.lang}:${sub.sourceUrl}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -155,69 +266,25 @@ class StreamujApi {
     }
     const priority = { cze: 0, slk: 1, eng: 2 };
     tracks.sort((a, b) => (priority[a.lang] ?? 3) - (priority[b.lang] ?? 3));
-    console.log(`[subtitle] link=${linkId} tracks=${tracks.length}`);
+    console.log(`[subtitle] link=${linkId} celkem=${tracks.length}`);
     return tracks.slice(0, 12);
   }
 
   async downloadSubtitleVtt(sourceUrl) {
-    if (typeof sourceUrl !== 'string' || !/^https?:\/\//i.test(sourceUrl)) throw new Error('Neplatná URL titulků.');
-    const parsed = new URL(sourceUrl);
-    if (!(parsed.hostname === 'streamuj.tv' || parsed.hostname.endsWith('.streamuj.tv'))) throw new Error('Nepovolený host titulků.');
-    if (parsed.protocol === 'http:') parsed.protocol = 'https:';
-
-    const response = await this.http.get(parsed.toString(), {
+    const normalized = normalizeSubtitleSourceUrl(sourceUrl, this.provider);
+    if (!normalized) throw new Error('Neplatná nebo nepovolená URL titulků.');
+    const response = await this.http.get(normalized, {
       responseType: 'text',
       transformResponse: [data => data],
       headers: {
         Accept: 'text/vtt,text/plain,application/x-subrip,*/*',
-        Referer: 'https://www.streamuj.tv/',
-        Cookie: `pass=${encodeURIComponent(this.username)}%3A%3A%3A${this.passwordHash}; sublanguage=1; quality=1; videolanguage=cs`
+        Referer: `https://${this.provider}/`,
+        Cookie: this.authCookie()
       }
     });
     const body = typeof response.data === 'string' ? response.data : String(response.data || '');
     if (!body || /^\s*</.test(body)) throw new Error('Streamuj nevrátil platná textová data titulků.');
-    const vtt = convertSrtToVtt(body);
-    const buffer = Buffer.from(vtt, 'utf8');
-    if (buffer.length > MAX_SUBTITLE_BYTES) throw new Error('Soubor titulků je příliš velký.');
-    return buffer;
-  }
-
-  async preparePublicSubtitle(track) {
-    if (!track || !track.sourceUrl) return null;
-    if (!this.publicBaseUrl) {
-      console.warn('[subtitle] PUBLIC_BASE_URL/RENDER_EXTERNAL_HOSTNAME není k dispozici; používám přímou URL.');
-      return { id: track.id, lang: track.lang, url: track.sourceUrl };
-    }
-
-    try {
-      const body = await this.downloadSubtitleVtt(track.sourceUrl);
-      const hash = crypto.createHash('sha256').update(body).digest('hex');
-      await fs.promises.mkdir(PUBLIC_SUBTITLE_DIR, { recursive: true });
-      const file = path.join(PUBLIC_SUBTITLE_DIR, `${hash}.vtt`);
-      try {
-        await fs.promises.access(file, fs.constants.R_OK);
-      } catch (_) {
-        await fs.promises.writeFile(file, body, { mode: 0o600 });
-      }
-      return {
-        id: `file_v1_${hash}_${track.lang}`,
-        lang: track.lang,
-        url: `${this.publicBaseUrl}/subtitle-cache/${hash}.vtt`
-      };
-    } catch (error) {
-      console.warn(`[subtitle] Serverová příprava selhala: ${error.message}`);
-      return null;
-    }
-  }
-
-  async preparePublicSubtitles(tracks) {
-    const prepared = await Promise.all((tracks || []).map(track => this.preparePublicSubtitle(track)));
-    const seen = new Set();
-    return prepared.filter(track => {
-      if (!track || seen.has(track.id)) return false;
-      seen.add(track.id);
-      return true;
-    });
+    return Buffer.from(convertSrtToVtt(body), 'utf8');
   }
 
   async resolveIndirectUrl(url) {
@@ -235,25 +302,28 @@ class StreamujApi {
   async getStreams(linkId, options = {}) {
     const data = await this.getVideoLinks(linkId, 18);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
+    const prepareSubtitles = typeof options.prepareSubtitles === 'function' ? options.prepareSubtitles : null;
+    let rawSubtitles = collectSubtitleTracksFromData(data, this.provider);
+    if (!rawSubtitles.length && prepareSubtitles) rawSubtitles = await this.getSubtitleTracks(linkId);
+    const preparedSubtitles = prepareSubtitles
+      ? await prepareSubtitles(rawSubtitles)
+      : rawSubtitles.map(sub => ({ id: sub.id, lang: sub.lang, url: sub.directUrl }));
     const result = [];
 
     for (const [rawLang, langData] of Object.entries(data.URL)) {
       if (!langData || typeof langData !== 'object') continue;
       const lang = normalizeLang(rawLang);
-      const rawSubs = collectSubtitles(langData, rawLang);
-      const subtitles = await this.preparePublicSubtitles(rawSubs);
-
       for (const [rawQuality, indirectUrl] of Object.entries(langData)) {
         if (rawQuality === 'subtitles' || typeof indirectUrl !== 'string' || !/^https?:\/\//i.test(indirectUrl)) continue;
         const quality = String(rawQuality).toUpperCase();
         const finalUrl = await this.resolveIndirectUrl(indirectUrl);
         if (!finalUrl) continue;
-        const stream = { lang, quality, url: finalUrl, subtitles: rawSubs };
+        const stream = { lang, quality, url: finalUrl, subtitles: rawSubtitles };
         result.push({
           url: finalUrl,
           name: `Sosáč • ${QUALITY_LABELS[quality] || quality}`,
           description: buildDescription(stream),
-          subtitles,
+          subtitles: preparedSubtitles,
           behaviorHints: { notWebReady: true, bingeGroup: `sosac-${lang.toLowerCase()}-${quality.toLowerCase()}` },
           _sort: { lang: langIndex(lang), quality: qualityIndex(quality) }
         });
@@ -265,4 +335,13 @@ class StreamujApi {
   }
 }
 
-module.exports = { StreamujApi, normalizeLang, flagFor, isoFor, collectSubtitles, convertSrtToVtt };
+module.exports = {
+  StreamujApi,
+  normalizeLang,
+  flagFor,
+  isoFor,
+  collectSubtitles,
+  collectSubtitleTracksFromData,
+  convertSrtToVtt,
+  normalizeSubtitleSourceUrl
+};
