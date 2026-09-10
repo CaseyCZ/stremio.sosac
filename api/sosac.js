@@ -179,6 +179,13 @@ class SosacApi {
     });
   }
 
+  async getEpisodes(listType = 'last-added', page = 1, pageSize = 100) {
+    return this.get(`episodes/lists/${listType}`, {
+      pocet: pageSize,
+      stranka: Math.max(1, Number(page) || 1)
+    });
+  }
+
   async searchMovies(query, page = 1, pageSize = 100) {
     if (!String(query || '').trim()) return [];
     return this.get('movies/simple-search', {
