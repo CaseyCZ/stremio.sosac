@@ -19,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.2';
+const VERSION = '0.4.3';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -247,11 +247,44 @@ async function findBestSosacMatch(sosac, type, titles, year) {
 function cinemetaTitles(meta) {
   return uniqueStrings([meta && meta.name, meta && meta.originalName, ...(Array.isArray(meta && meta.nameTranslations) ? meta.nameTranslations : [])]);
 }
+function isUsableArtwork(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value) && !/defaultnis|undefined|null/i.test(value);
+}
 function mergeCinemetaMeta(meta, sosacItem, language) {
   if (!meta) return null;
+
   const localizedName = sosacItem ? getLocalizedTitle(sosacItem, language) : '';
   const localizedDescription = sosacItem ? getLocalizedDescription(sosacItem, language) : '';
-  return { ...meta, id: String(meta.id || '').toLowerCase(), name: localizedName || meta.name, description: localizedDescription || meta.description };
+
+  let fallbackMeta = null;
+  if (sosacItem) {
+    fallbackMeta = String(meta.type || '').toLowerCase() === 'series'
+      ? seriesToMeta(sosacItem, language)
+      : movieToMeta(sosacItem, language);
+  }
+
+  const poster = isUsableArtwork(meta.poster)
+    ? meta.poster
+    : (fallbackMeta && isUsableArtwork(fallbackMeta.poster) ? fallbackMeta.poster : undefined);
+
+  const background = isUsableArtwork(meta.background)
+    ? meta.background
+    : (fallbackMeta && isUsableArtwork(fallbackMeta.background)
+      ? fallbackMeta.background
+      : poster);
+
+  if (!isUsableArtwork(meta.poster) && poster) {
+    console.log(`[artwork] Cinemeta bez posteru → používám Sosáč pro ${meta.id || meta.name || 'položku'}`);
+  }
+
+  return {
+    ...meta,
+    id: String(meta.id || '').toLowerCase(),
+    name: localizedName || meta.name,
+    description: localizedDescription || meta.description,
+    poster,
+    background
+  };
 }
 function catalogMetaFromCinemeta(meta, sosacItem, language) {
   const merged = mergeCinemetaMeta(meta, sosacItem, language);
@@ -273,9 +306,14 @@ function episodeTitle(item, language = 'cs') {
   return show || name || 'Epizoda';
 }
 function episodePoster(item) {
-  const raw = item && item.i;
-  if (Array.isArray(raw)) return raw.find(v => typeof v === 'string' && /^https?:\/\//i.test(v));
-  if (typeof raw === 'string' && /^https?:\/\//i.test(raw) && !raw.includes('defaultnis')) return raw;
+  const candidates = [item && item.i, item && item.ie, item && item.poster, item && item.image, item && item.thumbnail];
+  for (const raw of candidates) {
+    if (Array.isArray(raw)) {
+      const found = raw.find(v => isUsableArtwork(v));
+      if (found) return found;
+    }
+    if (isUsableArtwork(raw)) return raw;
+  }
   return undefined;
 }
 function episodeToCatalogMeta(item, language = 'cs') {
@@ -346,7 +384,15 @@ async function resolveEpisodeCatalogItem(item, cfg) {
   if (!meta || !/^tt\d{5,10}$/i.test(String(meta.id || ''))) return episodeToCatalogMeta(item, cfg.uiLanguage);
   const base = catalogMetaFromCinemeta(meta, null, cfg.uiLanguage);
   if (!base) return episodeToCatalogMeta(item, cfg.uiLanguage);
-  return { ...base, id: String(meta.id).toLowerCase(), name: episodeTitle(item, cfg.uiLanguage), behaviorHints: { ...(base.behaviorHints || {}), defaultVideoId: `${String(meta.id).toLowerCase()}:${season}:${episode}` } };
+  const fallbackPoster = episodePoster(item);
+  return {
+    ...base,
+    id: String(meta.id).toLowerCase(),
+    name: episodeTitle(item, cfg.uiLanguage),
+    poster: isUsableArtwork(base.poster) ? base.poster : fallbackPoster,
+    background: isUsableArtwork(base.background) ? base.background : fallbackPoster,
+    behaviorHints: { ...(base.behaviorHints || {}), defaultVideoId: `${String(meta.id).toLowerCase()}:${season}:${episode}` }
+  };
 }
 async function resolveSosacForImdb(sosac, type, imdbId) {
   const id = String(imdbId || '').toLowerCase();
