@@ -1,7 +1,8 @@
 const express = require('express');
 const path = require('path');
 const NodeCache = require('node-cache');
-const { SosacApi, movieToMeta, seriesToMeta } = require('./api/sosac');
+const { SosacApi, movieToMeta, seriesToMeta, getLocalizedTitle, getLocalizedDescription } = require('./api/sosac');
+const { StreamujApi } = require('./api/streamuj');
 
 const app = express();
 const PORT = process.env.PORT || 7000;
@@ -11,7 +12,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Content-Type', req.path.endsWith('.json') ? 'application/json; charset=utf-8' : res.getHeader('Content-Type'));
+  if (req.path.endsWith('.json')) res.setHeader('Content-Type', 'application/json; charset=utf-8');
   next();
 });
 
@@ -85,7 +86,7 @@ function buildManifest(cfg, host) {
 
   return {
     id: 'cz.caseycz.stremio.sosac',
-    version: '0.2.0',
+    version: '0.3.0',
     name: labels.name,
     description: 'Sosac/Streamuj addon with CZ/SK/EN metadata, audio and subtitle preferences.',
     logo: `${host}/logo.png`,
@@ -141,6 +142,49 @@ function makeSosac(cfg) {
   });
 }
 
+function makeStreamuj(cfg) {
+  return new StreamujApi({
+    username: cfg.streamujUser,
+    password: cfg.streamujPass,
+    provider: cfg.streamujProvider || 'www.streamuj.tv',
+    location: cfg.location || '1',
+    debugRaw: true
+  });
+}
+
+function buildSeriesVideos(detail, uiLanguage) {
+  if (!detail || typeof detail !== 'object') return [];
+  const videos = [];
+
+  const seasonKeys = Object.keys(detail)
+    .filter(key => key !== 'info' && /^\d+$/.test(key))
+    .sort((a, b) => Number(a) - Number(b));
+
+  for (const seasonKey of seasonKeys) {
+    const seasonData = detail[seasonKey];
+    if (!seasonData || typeof seasonData !== 'object') continue;
+
+    const episodeKeys = Object.keys(seasonData)
+      .filter(key => /^\d+$/.test(key))
+      .sort((a, b) => Number(a) - Number(b));
+
+    for (const episodeKey of episodeKeys) {
+      const episode = seasonData[episodeKey];
+      if (!episode || episode._id === undefined || episode._id === null) continue;
+      videos.push({
+        id: `sosac_ep_${episode._id}`,
+        title: getLocalizedTitle(episode, uiLanguage) || `S${seasonKey}E${episodeKey}`,
+        season: Number(seasonKey),
+        episode: Number(episodeKey),
+        released: episode.r ? new Date(episode.r).toISOString() : undefined,
+        overview: getLocalizedDescription(episode, uiLanguage) || '',
+        thumbnail: episode.ie || episode.i || undefined
+      });
+    }
+  }
+  return videos;
+}
+
 async function handleCatalog(req, res, extraRaw) {
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ metas: [] });
@@ -190,7 +234,7 @@ app.get('/configure', (req, res) => res.sendFile(path.join(__dirname, 'public', 
 app.get('/manifest.json', (req, res) => {
   res.json({
     id: 'cz.caseycz.stremio.sosac',
-    version: '0.2.0',
+    version: '0.3.0',
     name: 'Sosáč CZ/SK',
     description: `Configure at ${getHost(req)}/configure`,
     types: [], resources: [], catalogs: [],
@@ -214,14 +258,18 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
 
   try {
     const sosac = makeSosac(cfg);
+
     if (req.params.type === 'movie' && id.startsWith('sosac_m_')) {
       const item = await sosac.getMovie(id.slice('sosac_m_'.length));
       return res.json({ meta: movieToMeta(item, cfg.uiLanguage) });
     }
+
     if (req.params.type === 'series' && id.startsWith('sosac_s_')) {
       const detail = await sosac.getSeriesDetail(id.slice('sosac_s_'.length));
       const info = detail && detail.info ? detail.info : detail;
-      return res.json({ meta: seriesToMeta(info, cfg.uiLanguage) });
+      const meta = seriesToMeta(info, cfg.uiLanguage);
+      if (meta) meta.videos = buildSeriesVideos(detail, cfg.uiLanguage);
+      return res.json({ meta });
     }
   } catch (error) {
     console.error('[meta]', error.message);
@@ -233,19 +281,48 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
 app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ streams: [] });
-  // Next phase: Streamuj resolver + audio language sorting.
-  return res.json({ streams: [] });
+  const id = req.params.id.replace(/\.json$/, '');
+
+  try {
+    const sosac = makeSosac(cfg);
+    const streamuj = makeStreamuj(cfg);
+    if (!sosac.isConfigured() || !streamuj.isConfigured()) return res.json({ streams: [] });
+
+    let linkId = null;
+
+    if (req.params.type === 'movie' && id.startsWith('sosac_m_')) {
+      const item = await sosac.getMovie(id.slice('sosac_m_'.length));
+      linkId = item && item.l;
+    }
+
+    if (req.params.type === 'series' && id.startsWith('sosac_ep_')) {
+      const episode = await sosac.getEpisode(id.slice('sosac_ep_'.length));
+      linkId = episode && episode.l;
+    }
+
+    if (!linkId) return res.json({ streams: [] });
+
+    const streams = await streamuj.getStreams(linkId, {
+      audioLanguages: cfg.audioLanguages,
+      subtitleLanguages: cfg.subtitleLanguages,
+      localSubtitleConversion: true
+    });
+
+    return res.json({ streams });
+  } catch (error) {
+    console.error('[stream]', error.message);
+    return res.json({ streams: [] });
+  }
 });
 
 app.get('/:cfg/subtitles/:type/:id.json', async (req, res) => {
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ subtitles: [] });
-  // Next phase: Streamuj subtitles + Stremio local subtitle conversion where supported.
   return res.json({ subtitles: [] });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, version: '0.2.0', cacheKeys: cache.keys().length }));
+app.get('/health', (req, res) => res.json({ ok: true, version: '0.3.0', cacheKeys: cache.keys().length }));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Sosac addon v0.2.0 listening on port ${PORT}`);
+  console.log(`Sosac addon v0.3.0 listening on port ${PORT}`);
 });
