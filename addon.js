@@ -6,7 +6,7 @@ const { StreamujApi } = require('./api/streamuj');
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -38,45 +38,48 @@ function labelsFor(language) {
   return {
     cs: {
       name: 'Sosáč CZ/SK',
-      moviePopular: '🔥 Sosáč – Oblíbené filmy',
-      movieRecent: '🆕 Sosáč – Nové filmy',
-      movieRated: '⭐ Sosáč – Nejlépe hodnocené filmy',
-      movieDub: '🎙️ Sosáč – Filmy s dabingem',
-      movieSubs: '💬 Sosáč – Filmy s titulky',
-      movieSearch: '🔎 Sosáč – Hledat filmy',
-      seriesPopular: '🔥 Sosáč – Oblíbené seriály',
-      seriesRecent: '🆕 Sosáč – Nové seriály',
-      seriesRated: '⭐ Sosáč – Nejlépe hodnocené seriály',
-      seriesDub: '🎙️ Sosáč – Seriály s dabingem',
-      seriesSearch: '🔎 Sosáč – Hledat seriály'
+      moviePopular: '🔥 Sosáč – Oblíbené',
+      movieRecent: '🆕 Sosáč – Nové',
+      movieRated: '⭐ Sosáč – Nejlépe hodnocené',
+      movieDub: '🎙️ Sosáč – S dabingem',
+      movieSubs: '💬 Sosáč – S titulky',
+      movieSearch: '🔎 Sosáč – Hledat',
+      seriesPopular: '🔥 Sosáč – Oblíbené',
+      seriesRecent: '🆕 Sosáč – Nové',
+      seriesRated: '⭐ Sosáč – Nejlépe hodnocené',
+      seriesDub: '🎙️ Sosáč – S dabingem',
+      seriesSubs: '💬 Sosáč – S titulky',
+      seriesSearch: '🔎 Sosáč – Hledat'
     },
     sk: {
       name: 'Sosáč CZ/SK',
-      moviePopular: '🔥 Sosáč – Obľúbené filmy',
-      movieRecent: '🆕 Sosáč – Nové filmy',
-      movieRated: '⭐ Sosáč – Najlepšie hodnotené filmy',
-      movieDub: '🎙️ Sosáč – Filmy s dabingom',
-      movieSubs: '💬 Sosáč – Filmy s titulkami',
-      movieSearch: '🔎 Sosáč – Hľadať filmy',
-      seriesPopular: '🔥 Sosáč – Obľúbené seriály',
-      seriesRecent: '🆕 Sosáč – Nové seriály',
-      seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
-      seriesDub: '🎙️ Sosáč – Seriály s dabingom',
-      seriesSearch: '🔎 Sosáč – Hľadať seriály'
+      moviePopular: '🔥 Sosáč – Obľúbené',
+      movieRecent: '🆕 Sosáč – Nové',
+      movieRated: '⭐ Sosáč – Najlepšie hodnotené',
+      movieDub: '🎙️ Sosáč – S dabingom',
+      movieSubs: '💬 Sosáč – S titulkami',
+      movieSearch: '🔎 Sosáč – Hľadať',
+      seriesPopular: '🔥 Sosáč – Obľúbené',
+      seriesRecent: '🆕 Sosáč – Nové',
+      seriesRated: '⭐ Sosáč – Najlepšie hodnotené',
+      seriesDub: '🎙️ Sosáč – S dabingom',
+      seriesSubs: '💬 Sosáč – S titulkami',
+      seriesSearch: '🔎 Sosáč – Hľadať'
     },
     en: {
       name: 'Sosac CZ/SK',
-      moviePopular: '🔥 Sosac – Popular movies',
-      movieRecent: '🆕 Sosac – Recently added movies',
-      movieRated: '⭐ Sosac – Top rated movies',
-      movieDub: '🎙️ Sosac – Dubbed movies',
-      movieSubs: '💬 Sosac – Movies with subtitles',
-      movieSearch: '🔎 Sosac – Search movies',
-      seriesPopular: '🔥 Sosac – Popular series',
-      seriesRecent: '🆕 Sosac – Recently added series',
-      seriesRated: '⭐ Sosac – Top rated series',
-      seriesDub: '🎙️ Sosac – Dubbed series',
-      seriesSearch: '🔎 Sosac – Search series'
+      moviePopular: '🔥 Sosac – Popular',
+      movieRecent: '🆕 Sosac – Recently added',
+      movieRated: '⭐ Sosac – Top rated',
+      movieDub: '🎙️ Sosac – Dubbed',
+      movieSubs: '💬 Sosac – Subtitled',
+      movieSearch: '🔎 Sosac – Search',
+      seriesPopular: '🔥 Sosac – Popular',
+      seriesRecent: '🆕 Sosac – Recently added',
+      seriesRated: '⭐ Sosac – Top rated',
+      seriesDub: '🎙️ Sosac – Dubbed',
+      seriesSubs: '💬 Sosac – Subtitled',
+      seriesSearch: '🔎 Sosac – Search'
     }
   }[lang];
 }
@@ -105,6 +108,7 @@ function buildManifest(cfg, host) {
       { type: 'series', id: 'ss-last-added', name: labels.seriesRecent, extra: pageExtra },
       { type: 'series', id: 'ss-top-rated', name: labels.seriesRated, extra: pageExtra },
       { type: 'series', id: 'ss-dubbing', name: labels.seriesDub, extra: pageExtra },
+      { type: 'series', id: 'ss-subtitles', name: labels.seriesSubs, extra: pageExtra },
       { type: 'series', id: 'ss-search', name: labels.seriesSearch, extra: searchExtra }
     ],
     behaviorHints: { configurable: true, configurationRequired: false }
@@ -122,8 +126,12 @@ const MOVIE_MAP = {
 const SERIES_MAP = {
   'ss-popular': 'popular',
   'ss-last-added': 'last-added',
-  'ss-top-rated': 'top-rated',
-  'ss-dubbing': 'news-with-dubbing'
+  'ss-top-rated': 'top-rated'
+};
+
+const SERIES_EPISODE_MAP = {
+  'ss-dubbing': 'news-with-dubbing',
+  'ss-subtitles': 'news-with-subtitles'
 };
 
 function parseExtra(extraRaw) {
@@ -152,6 +160,74 @@ function makeStreamuj(cfg) {
     location: cfg.location || '1',
     debugRaw: DEBUG_STREAMUJ_RAW
   });
+}
+
+function firstLocalized(value, language = 'cs') {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  const order = language === 'sk' ? ['sk', 'cs', 'en'] : language === 'en' ? ['en', 'cs', 'sk'] : ['cs', 'sk', 'en'];
+  for (const key of order) {
+    const v = value[key];
+    if (Array.isArray(v) && v.find(Boolean)) return v.find(Boolean);
+    if (typeof v === 'string' && v) return v;
+  }
+  for (const v of Object.values(value)) {
+    if (Array.isArray(v) && v.find(Boolean)) return v.find(Boolean);
+    if (typeof v === 'string' && v) return v;
+  }
+  return '';
+}
+
+function episodeTitle(item, language = 'cs') {
+  let show = '';
+  let name = '';
+  if (item && item.ne) {
+    show = firstLocalized(item.n, language);
+    name = firstLocalized(item.ne, language);
+  } else {
+    name = firstLocalized(item && item.n, language);
+    show = firstLocalized(item && item.t, language);
+  }
+  const s = String(item && item.s !== undefined ? item.s : '').padStart(2, '0');
+  const e = String(item && item.ep !== undefined ? item.ep : '').padStart(2, '0');
+  const se = s && e ? `${s}x${e}` : '';
+  if (show && se && name) return `${show}: ${se} - ${name}`;
+  if (show && se) return `${show}: ${se}`;
+  if (se && name) return `${se} - ${name}`;
+  return show || name || 'Epizoda';
+}
+
+function episodePoster(item) {
+  const raw = item && item.i;
+  if (Array.isArray(raw)) {
+    const found = raw.find(v => typeof v === 'string' && /^https?:\/\//i.test(v));
+    if (found) return found;
+  }
+  if (typeof raw === 'string' && /^https?:\/\//i.test(raw) && !raw.includes('defaultnis')) return raw;
+  return undefined;
+}
+
+function episodeToCatalogMeta(item, language = 'cs') {
+  if (!item || item._id === undefined || item._id === null) return null;
+  const id = `sosac_ep_${item._id}`;
+  const season = Number(item.s);
+  const episode = Number(item.ep);
+  const title = episodeTitle(item, language);
+  return {
+    id,
+    type: 'series',
+    name: title,
+    poster: episodePoster(item),
+    description: getLocalizedDescription(item, language),
+    behaviorHints: { defaultVideoId: id },
+    videos: [{
+      id,
+      title,
+      season: Number.isFinite(season) ? season : 0,
+      episode: Number.isFinite(episode) ? episode : 0,
+      thumbnail: episodePoster(item)
+    }]
+  };
 }
 
 function buildSeriesVideos(detail, uiLanguage) {
@@ -215,8 +291,23 @@ async function handleCatalog(req, res, extraRaw) {
     }
 
     if (type === 'series') {
-      if (id === 'ss-search') items = await sosac.searchSeries(extra.search, page);
-      else if (SERIES_MAP[id]) items = await sosac.getSeries(SERIES_MAP[id], page);
+      if (id === 'ss-search') {
+        items = await sosac.searchSeries(extra.search, page);
+        const metas = (Array.isArray(items) ? items : []).map(item => seriesToMeta(item, cfg.uiLanguage)).filter(Boolean);
+        const payload = { metas };
+        cache.set(cacheKey, payload, 180);
+        return res.json(payload);
+      }
+
+      if (SERIES_EPISODE_MAP[id]) {
+        items = await sosac.getEpisodes(SERIES_EPISODE_MAP[id], page);
+        const metas = (Array.isArray(items) ? items : []).map(item => episodeToCatalogMeta(item, cfg.uiLanguage)).filter(Boolean);
+        const payload = { metas };
+        cache.set(cacheKey, payload, 180);
+        return res.json(payload);
+      }
+
+      if (SERIES_MAP[id]) items = await sosac.getSeries(SERIES_MAP[id], page);
       const metas = (Array.isArray(items) ? items : []).map(item => seriesToMeta(item, cfg.uiLanguage)).filter(Boolean);
       const payload = { metas };
       cache.set(cacheKey, payload, 180);
@@ -274,6 +365,11 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
       const meta = seriesToMeta(info, cfg.uiLanguage);
       if (meta) meta.videos = buildSeriesVideos(detail, cfg.uiLanguage);
       return res.json({ meta });
+    }
+
+    if (req.params.type === 'series' && id.startsWith('sosac_ep_')) {
+      const episode = await sosac.getEpisode(id.slice('sosac_ep_'.length));
+      return res.json({ meta: episodeToCatalogMeta(episode, cfg.uiLanguage) });
     }
   } catch (error) {
     console.error('[meta]', error.message);
