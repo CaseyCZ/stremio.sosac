@@ -6,6 +6,7 @@ const { StreamujApi } = require('./api/streamuj');
 
 const app = express();
 const PORT = process.env.PORT || 7000;
+const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -148,7 +149,7 @@ function makeStreamuj(cfg) {
     password: cfg.streamujPass,
     provider: cfg.streamujProvider || 'www.streamuj.tv',
     location: cfg.location || '1',
-    debugRaw: true
+    debugRaw: DEBUG_STREAMUJ_RAW
   });
 }
 
@@ -321,7 +322,7 @@ app.get('/:cfg/subtitles/:type/:id.json', async (req, res) => {
   return res.json({ subtitles: [] });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, version: '0.3.0', cacheKeys: cache.keys().length }));
+app.get('/health', (req, res) => res.json({ ok: true, version: '0.3.0', cacheKeys: cache.keys().length, debugStreamujRaw: DEBUG_STREAMUJ_RAW }));
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Sosac addon v0.3.0 listening on port ${PORT}`);
