@@ -6,7 +6,7 @@ const { StreamujApi } = require('./api/streamuj');
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.3.2';
+const VERSION = '0.3.3';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -178,6 +178,18 @@ function firstLocalized(value, language = 'cs') {
   return '';
 }
 
+function safeIsoDate(value) {
+  if (value === null || value === undefined || value === '') return undefined;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    console.warn('[meta] Přeskakuji neplatné datum epizody:', value);
+    return undefined;
+  }
+
+  return date.toISOString();
+}
+
 function episodeTitle(item, language = 'cs') {
   let show = '';
   let name = '';
@@ -254,7 +266,7 @@ function buildSeriesVideos(detail, uiLanguage) {
         title: getLocalizedTitle(episode, uiLanguage) || `S${seasonKey}E${episodeKey}`,
         season: Number(seasonKey),
         episode: Number(episodeKey),
-        released: episode.r ? new Date(episode.r).toISOString() : undefined,
+        released: safeIsoDate(episode.r),
         overview: getLocalizedDescription(episode, uiLanguage) || '',
         thumbnail: episode.ie || episode.i || undefined
       });
