@@ -26,6 +26,9 @@ const ISO_LANG = {
   EN: 'eng', ENG: 'eng'
 };
 
+const LANG_ORDER = ['CZ', 'SK', 'EN'];
+const QUALITY_ORDER = ['UHD', 'FHD', 'HD', 'SD', 'KINORIP', 'TVRIP'];
+
 function md5(value) {
   return crypto.createHash('md5').update(String(value || '')).digest('hex');
 }
@@ -46,15 +49,13 @@ function isoFor(lang) {
   return ISO_LANG[String(lang || '').trim().toUpperCase()] || ISO_LANG[normalizeLang(lang)] || String(lang || 'und').toLowerCase();
 }
 
-function preferredIndex(lang, preferences) {
-  const wanted = Array.isArray(preferences) ? preferences.map(normalizeLang) : [];
-  const index = wanted.indexOf(normalizeLang(lang));
+function langIndex(lang) {
+  const index = LANG_ORDER.indexOf(normalizeLang(lang));
   return index === -1 ? 999 : index;
 }
 
 function qualityIndex(quality) {
-  const order = ['UHD', 'FHD', 'HD', 'SD', 'KINORIP', 'TVRIP'];
-  const index = order.indexOf(String(quality || '').toUpperCase());
+  const index = QUALITY_ORDER.indexOf(String(quality || '').toUpperCase());
   return index === -1 ? 999 : index;
 }
 
@@ -74,12 +75,6 @@ function collectSubtitles(langData) {
       sourceLang: normalizeLang(lang),
       directUrl: url
     }));
-}
-
-function filterSubtitles(subtitles, preferences) {
-  if (!Array.isArray(preferences) || preferences.length === 0) return subtitles;
-  const wanted = new Set(preferences.map(normalizeLang));
-  return subtitles.filter(sub => wanted.has(normalizeLang(sub.sourceLang)));
 }
 
 function toStremioSubtitle(sub, useLocalConversion = true) {
@@ -105,7 +100,7 @@ class StreamujApi {
     this.passwordHash = md5(options.password || '');
     this.provider = options.provider || 'www.streamuj.tv';
     this.location = String(options.location) === '2' ? '2' : '1';
-    this.debugRaw = options.debugRaw !== false;
+    this.debugRaw = options.debugRaw === true;
     this.http = axios.create({
       timeout: 15000,
       headers: {
@@ -159,16 +154,13 @@ class StreamujApi {
     const data = await this.getVideoLinks(linkId);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
 
-    const audioPreferences = Array.isArray(options.audioLanguages) ? options.audioLanguages : [];
-    const subtitlePreferences = Array.isArray(options.subtitleLanguages) ? options.subtitleLanguages : [];
     const useLocalSubtitleConversion = options.localSubtitleConversion !== false;
     const result = [];
 
     for (const [rawLang, langData] of Object.entries(data.URL)) {
       if (!langData || typeof langData !== 'object') continue;
       const lang = normalizeLang(rawLang);
-      const allSubs = collectSubtitles(langData);
-      const selectedSubs = filterSubtitles(allSubs, subtitlePreferences);
+      const subtitles = collectSubtitles(langData);
 
       for (const [rawQuality, indirectUrl] of Object.entries(langData)) {
         if (rawQuality === 'subtitles') continue;
@@ -178,24 +170,19 @@ class StreamujApi {
         const finalUrl = await this.resolveIndirectUrl(indirectUrl);
         if (!finalUrl) continue;
 
-        const stream = {
-          lang,
-          quality,
-          url: finalUrl,
-          subtitles: selectedSubs
-        };
+        const stream = { lang, quality, url: finalUrl, subtitles };
 
         result.push({
           url: finalUrl,
           name: `Sosáč • ${QUALITY_LABELS[quality] || quality}`,
           description: buildDescription(stream),
-          subtitles: selectedSubs.map(sub => toStremioSubtitle(sub, useLocalSubtitleConversion)),
+          subtitles: subtitles.map(sub => toStremioSubtitle(sub, useLocalSubtitleConversion)),
           behaviorHints: {
             notWebReady: true,
             bingeGroup: `sosac-${lang.toLowerCase()}-${quality.toLowerCase()}`
           },
           _sort: {
-            lang: preferredIndex(lang, audioPreferences),
+            lang: langIndex(lang),
             quality: qualityIndex(quality)
           }
         });
