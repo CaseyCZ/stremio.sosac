@@ -1,0 +1,19 @@
+{
+  "name": "stremio-sosac",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Configurable Stremio addon for Sosac/Streamuj with CZ/SK/EN metadata, audio and subtitle preferences.",
+  "main": "addon.js",
+  "scripts": {
+    "start": "node addon.js",
+    "dev": "node --watch addon.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "express": "^4.21.2",
+    "node-cache": "^5.1.2"
+  }
+}
