@@ -6,6 +6,7 @@ const { StreamujApi } = require('./api/streamuj');
 
 const app = express();
 const PORT = process.env.PORT || 7000;
+const VERSION = '0.3.1';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -87,9 +88,9 @@ function buildManifest(cfg, host) {
 
   return {
     id: 'cz.caseycz.stremio.sosac',
-    version: '0.3.0',
+    version: VERSION,
     name: labels.name,
-    description: 'Sosac/Streamuj addon with CZ/SK/EN metadata, audio and subtitle preferences.',
+    description: 'Sosac/Streamuj addon with CZ/SK/EN metadata, audio and subtitles.',
     logo: `${host}/logo.png`,
     types: ['movie', 'series'],
     resources: ['catalog', 'meta', 'stream', 'subtitles'],
@@ -106,7 +107,7 @@ function buildManifest(cfg, host) {
       { type: 'series', id: 'ss-dubbing', name: labels.seriesDub, extra: pageExtra },
       { type: 'series', id: 'ss-search', name: labels.seriesSearch, extra: searchExtra }
     ],
-    behaviorHints: { configurable: true, configurationRequired: true }
+    behaviorHints: { configurable: true, configurationRequired: false }
   };
 }
 
@@ -233,9 +234,10 @@ app.get('/', (req, res) => res.redirect('/configure'));
 app.get('/configure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'configure.html')));
 
 app.get('/manifest.json', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   res.json({
     id: 'cz.caseycz.stremio.sosac',
-    version: '0.3.0',
+    version: VERSION,
     name: 'Sosáč CZ/SK',
     description: `Configure at ${getHost(req)}/configure`,
     types: [], resources: [], catalogs: [],
@@ -244,6 +246,7 @@ app.get('/manifest.json', (req, res) => {
 });
 
 app.get('/:cfg/manifest.json', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.status(400).json({ error: 'Invalid configuration' });
   return res.json(buildManifest(cfg, getHost(req)));
@@ -304,8 +307,6 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     if (!linkId) return res.json({ streams: [] });
 
     const streams = await streamuj.getStreams(linkId, {
-      audioLanguages: cfg.audioLanguages,
-      subtitleLanguages: cfg.subtitleLanguages,
       localSubtitleConversion: true
     });
 
@@ -322,8 +323,13 @@ app.get('/:cfg/subtitles/:type/:id.json', async (req, res) => {
   return res.json({ subtitles: [] });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, version: '0.3.0', cacheKeys: cache.keys().length, debugStreamujRaw: DEBUG_STREAMUJ_RAW }));
+app.get('/health', (req, res) => res.json({
+  ok: true,
+  version: VERSION,
+  cacheKeys: cache.keys().length,
+  debugStreamujRaw: DEBUG_STREAMUJ_RAW
+}));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Sosac addon v0.3.0 listening on port ${PORT}`);
+  console.log(`Sosac addon v${VERSION} listening on port ${PORT}`);
 });
