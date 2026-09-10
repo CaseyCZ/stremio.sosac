@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sosáč Stremio Addon</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;background:#111;color:#eee}
+    h1{margin-bottom:8px}.card{background:#1c1c1c;border-radius:14px;padding:22px;margin:18px 0}label{display:block;margin:14px 0 6px}input,select{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid #444;background:#222;color:#fff}button{margin-top:18px;padding:12px 18px;border:0;border-radius:9px;cursor:pointer;font-weight:700}.hint{opacity:.75;font-size:.92rem}.checks label{display:inline-flex;align-items:center;margin-right:18px}.checks input{width:auto;margin-right:6px}#result{word-break:break-all;margin-top:16px}
+  </style>
+</head>
+<body>
+  <h1>🎬 Sosáč Stremio Addon</h1>
+  <p class="hint">Konfigurace jazyka metadat, zvuku a titulků.</p>
+
+  <div class="card">
+    <label for="uiLanguage">Jazyk metadat / rozhraní</label>
+    <select id="uiLanguage">
+      <option value="cs">Čeština</option>
+      <option value="sk">Slovenština</option>
+      <option value="en">English</option>
+    </select>
+
+    <label>Preferovaný zvuk</label>
+    <div class="checks">
+      <label><input type="checkbox" name="audio" value="CZ" checked> CZ</label>
+      <label><input type="checkbox" name="audio" value="SK" checked> SK</label>
+      <label><input type="checkbox" name="audio" value="EN" checked> EN</label>
+    </div>
+
+    <label>Preferované titulky</label>
+    <div class="checks">
+      <label><input type="checkbox" name="subs" value="cze" checked> CZ</label>
+      <label><input type="checkbox" name="subs" value="slk" checked> SK</label>
+      <label><input type="checkbox" name="subs" value="eng" checked> EN</label>
+    </div>
+
+    <label for="sosacUser">Sosáč uživatel</label>
+    <input id="sosacUser" autocomplete="username">
+
+    <label for="sosacPass">Sosáč heslo</label>
+    <input id="sosacPass" type="password" autocomplete="current-password">
+
+    <label for="streamujUser">Streamuj.tv uživatel</label>
+    <input id="streamujUser" autocomplete="username">
+
+    <label for="streamujPass">Streamuj.tv heslo</label>
+    <input id="streamujPass" type="password" autocomplete="current-password">
+
+    <button id="generate">Vygenerovat instalační odkaz</button>
+    <div id="result"></div>
+  </div>
+
+<script>
+function toBase64Url(obj){
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let binary=''; bytes.forEach(b=>binary+=String.fromCharCode(b));
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function checked(name){return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(x=>x.value)}
+document.getElementById('generate').onclick=()=>{
+  const cfg={
+    uiLanguage:document.getElementById('uiLanguage').value,
+    audioLanguages:checked('audio'),
+    subtitleLanguages:checked('subs'),
+    sosacUser:document.getElementById('sosacUser').value.trim(),
+    sosacPass:document.getElementById('sosacPass').value,
+    streamujUser:document.getElementById('streamujUser').value.trim(),
+    streamujPass:document.getElementById('streamujPass').value
+  };
+  const encoded=toBase64Url(cfg);
+  const manifest=`${location.origin}/${encoded}/manifest.json`;
+  const install=`stremio://${location.host}/${encoded}/manifest.json`;
+  document.getElementById('result').innerHTML=`<p><b>Manifest:</b><br>${manifest}</p><p><a href="${install}">Nainstalovat do Stremia</a></p>`;
+};
+</script>
+</body>
+</html>
