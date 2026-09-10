@@ -59,20 +59,74 @@ function validHttpUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : undefined;
 }
 
+function firstArtworkUrl(...values) {
+  for (const value of values) {
+    if (!value) continue;
+
+    if (typeof value === 'string') {
+      const url = validHttpUrl(value);
+      if (url && !url.includes('defaultnis')) return url;
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      const nested = firstArtworkUrl(...value);
+      if (nested) return nested;
+      continue;
+    }
+
+    if (typeof value === 'object') {
+      const preferred = [
+        value.poster, value.image, value.original, value.large,
+        value.medium, value.small, value.url, value.src
+      ];
+      const nested = firstArtworkUrl(...preferred, ...Object.values(value));
+      if (nested) return nested;
+    }
+  }
+
+  return undefined;
+}
+
 function moviePoster(item) {
-  const direct = validHttpUrl(item && (item.ie || item.i));
-  if (direct && !direct.includes('defaultnis')) return direct;
+  const direct = firstArtworkUrl(
+    item && item.ie,
+    item && item.i,
+    item && item.poster,
+    item && item.image,
+    item && item.thumbnail,
+    item && item.thumb
+  );
+  if (direct) return direct;
+
   return item && item._id
     ? `https://movies.sosac.tv/images/75x109/movie-${item._id}.jpg`
     : undefined;
 }
 
 function seriesPoster(item) {
-  const direct = validHttpUrl(item && (item.i || item.ie));
-  if (direct && !direct.includes('defaultnis')) return direct;
+  const direct = firstArtworkUrl(
+    item && item.i,
+    item && item.ie,
+    item && item.poster,
+    item && item.image,
+    item && item.thumbnail,
+    item && item.thumb
+  );
+  if (direct) return direct;
+
   return item && item._id
     ? `https://movies.sosac.tv/images/558x313/serial-${item._id}.jpg`
     : undefined;
+}
+
+function itemBackground(item) {
+  return firstArtworkUrl(
+    item && item.b,
+    item && item.background,
+    item && item.backdrop,
+    item && item.fanart
+  );
 }
 
 function numberOrUndefined(value) {
@@ -102,7 +156,7 @@ function movieToMeta(item, language = 'cs') {
     type: 'movie',
     name,
     poster: moviePoster(item),
-    background: validHttpUrl(item.b),
+    background: itemBackground(item),
     description: getLocalizedDescription(item, language),
     releaseInfo: year ? String(Math.trunc(year)) : undefined,
     year: year ? Math.trunc(year) : undefined,
@@ -128,7 +182,7 @@ function seriesToMeta(item, language = 'cs') {
     type: 'series',
     name,
     poster: seriesPoster(item),
-    background: validHttpUrl(item.b),
+    background: itemBackground(item),
     description: getLocalizedDescription(item, language),
     releaseInfo: year ? String(Math.trunc(year)) : undefined,
     year: year ? Math.trunc(year) : undefined,
@@ -229,5 +283,9 @@ module.exports = {
   getLocalizedTitle,
   getLocalizedDescription,
   movieToMeta,
-  seriesToMeta
+  seriesToMeta,
+  moviePoster,
+  seriesPoster,
+  itemBackground,
+  firstArtworkUrl
 };
