@@ -6,12 +6,12 @@
   <title>Sosáč Stremio Addon</title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;background:#111;color:#eee}
-    h1{margin-bottom:8px}.card{background:#1c1c1c;border-radius:14px;padding:22px;margin:18px 0}label{display:block;margin:14px 0 6px}input,select{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid #444;background:#222;color:#fff}button{margin-top:18px;padding:12px 18px;border:0;border-radius:9px;cursor:pointer;font-weight:700}.hint{opacity:.75;font-size:.92rem}.checks label{display:inline-flex;align-items:center;margin-right:18px}.checks input{width:auto;margin-right:6px}#result{word-break:break-all;margin-top:16px}
+    h1{margin-bottom:8px}.card{background:#1c1c1c;border-radius:14px;padding:22px;margin:18px 0}label{display:block;margin:14px 0 6px}input,select{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid #444;background:#222;color:#fff}button{margin-top:18px;padding:12px 18px;border:0;border-radius:9px;cursor:pointer;font-weight:700}.hint{opacity:.75;font-size:.92rem}.note{margin:16px 0;padding:12px 14px;border-radius:9px;background:#252525;color:#ccc;font-size:.92rem;line-height:1.45}#result{word-break:break-all;margin-top:16px}
   </style>
 </head>
 <body>
   <h1>🎬 Sosáč Stremio Addon</h1>
-  <p class="hint">Konfigurace jazyka metadat, zvuku a titulků.</p>
+  <p class="hint">Konfigurace jazyka metadat a přihlašovacích údajů.</p>
 
   <div class="card">
     <label for="uiLanguage">Jazyk metadat / rozhraní</label>
@@ -21,18 +21,8 @@
       <option value="en">English</option>
     </select>
 
-    <label>Preferovaný zvuk</label>
-    <div class="checks">
-      <label><input type="checkbox" name="audio" value="CZ" checked> CZ</label>
-      <label><input type="checkbox" name="audio" value="SK" checked> SK</label>
-      <label><input type="checkbox" name="audio" value="EN" checked> EN</label>
-    </div>
-
-    <label>Preferované titulky</label>
-    <div class="checks">
-      <label><input type="checkbox" name="subs" value="cze" checked> CZ</label>
-      <label><input type="checkbox" name="subs" value="slk" checked> SK</label>
-      <label><input type="checkbox" name="subs" value="eng" checked> EN</label>
+    <div class="note">
+      🎧 Zvuk a 💬 titulky se nefiltrují zde. Addon zobrazí všechny varianty, které jsou u konkrétního videa dostupné. Výběr probíhá až ve Stremiu.
     </div>
 
     <label for="sosacUser">Sosáč uživatel</label>
@@ -57,12 +47,9 @@ function toBase64Url(obj){
   let binary=''; bytes.forEach(b=>binary+=String.fromCharCode(b));
   return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
-function checked(name){return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(x=>x.value)}
 document.getElementById('generate').onclick=()=>{
   const cfg={
     uiLanguage:document.getElementById('uiLanguage').value,
-    audioLanguages:checked('audio'),
-    subtitleLanguages:checked('subs'),
     sosacUser:document.getElementById('sosacUser').value.trim(),
     sosacPass:document.getElementById('sosacPass').value,
     streamujUser:document.getElementById('streamujUser').value.trim(),
