@@ -11,7 +11,6 @@ const {
 const { StreamujApi } = require('./api/streamuj');
 const {
   CinemetaApi,
-  normalizeTitle,
   titleScore,
   extractImdbId,
   uniqueStrings
@@ -19,7 +18,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -53,51 +52,52 @@ function getHost(req) {
 
 function labelsFor(language) {
   const lang = ['cs', 'sk', 'en'].includes(language) ? language : 'cs';
+
   return {
     cs: {
       name: 'Sosáč CZ/SK',
-      moviePopular: '🔥 Sosáč – Oblíbené',
-      movieRecent: '🆕 Sosáč – Nové',
-      movieRated: '⭐ Sosáč – Nejlépe hodnocené',
-      movieDub: '🎙️ Sosáč – S dabingem',
-      movieSubs: '💬 Sosáč – S titulky',
-      movieSearch: '🔎 Sosáč – Hledat',
-      seriesPopular: '🔥 Sosáč – Oblíbené',
-      seriesRecent: '🆕 Sosáč – Nové',
-      seriesRated: '⭐ Sosáč – Nejlépe hodnocené',
-      seriesDub: '🎙️ Sosáč – S dabingem',
-      seriesSubs: '💬 Sosáč – S titulky',
-      seriesSearch: '🔎 Sosáč – Hledat'
+      moviePopular: '🔥 Sosáč – Oblíbené filmy',
+      seriesPopular: '🔥 Sosáč – Oblíbené seriály',
+      movieRecent: '🆕 Sosáč – Nové filmy',
+      seriesRecent: '🆕 Sosáč – Nové seriály',
+      movieRated: '⭐ Sosáč – Nejlépe hodnocené filmy',
+      seriesRated: '⭐ Sosáč – Nejlépe hodnocené seriály',
+      movieDub: '🎙️ Sosáč – S dabingem filmy',
+      seriesDub: '🎙️ Sosáč – S dabingem seriály',
+      movieSubs: '💬 Sosáč – S titulky filmy',
+      seriesSubs: '💬 Sosáč – S titulky seriály',
+      movieSearch: '🔎 Sosáč – Hledat filmy',
+      seriesSearch: '🔎 Sosáč – Hledat seriály'
     },
     sk: {
       name: 'Sosáč CZ/SK',
-      moviePopular: '🔥 Sosáč – Obľúbené',
-      movieRecent: '🆕 Sosáč – Nové',
-      movieRated: '⭐ Sosáč – Najlepšie hodnotené',
-      movieDub: '🎙️ Sosáč – S dabingom',
-      movieSubs: '💬 Sosáč – S titulkami',
-      movieSearch: '🔎 Sosáč – Hľadať',
-      seriesPopular: '🔥 Sosáč – Obľúbené',
-      seriesRecent: '🆕 Sosáč – Nové',
-      seriesRated: '⭐ Sosáč – Najlepšie hodnotené',
-      seriesDub: '🎙️ Sosáč – S dabingom',
-      seriesSubs: '💬 Sosáč – S titulkami',
-      seriesSearch: '🔎 Sosáč – Hľadať'
+      moviePopular: '🔥 Sosáč – Obľúbené filmy',
+      seriesPopular: '🔥 Sosáč – Obľúbené seriály',
+      movieRecent: '🆕 Sosáč – Nové filmy',
+      seriesRecent: '🆕 Sosáč – Nové seriály',
+      movieRated: '⭐ Sosáč – Najlepšie hodnotené filmy',
+      seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
+      movieDub: '🎙️ Sosáč – S dabingom filmy',
+      seriesDub: '🎙️ Sosáč – S dabingom seriály',
+      movieSubs: '💬 Sosáč – S titulkami filmy',
+      seriesSubs: '💬 Sosáč – S titulkami seriály',
+      movieSearch: '🔎 Sosáč – Hľadať filmy',
+      seriesSearch: '🔎 Sosáč – Hľadať seriály'
     },
     en: {
       name: 'Sosac CZ/SK',
-      moviePopular: '🔥 Sosac – Popular',
-      movieRecent: '🆕 Sosac – Recently added',
-      movieRated: '⭐ Sosac – Top rated',
-      movieDub: '🎙️ Sosac – Dubbed',
-      movieSubs: '💬 Sosac – Subtitled',
-      movieSearch: '🔎 Sosac – Search',
-      seriesPopular: '🔥 Sosac – Popular',
-      seriesRecent: '🆕 Sosac – Recently added',
-      seriesRated: '⭐ Sosac – Top rated',
-      seriesDub: '🎙️ Sosac – Dubbed',
-      seriesSubs: '💬 Sosac – Subtitled',
-      seriesSearch: '🔎 Sosac – Search'
+      moviePopular: '🔥 Sosac – Popular movies',
+      seriesPopular: '🔥 Sosac – Popular series',
+      movieRecent: '🆕 Sosac – Recently added movies',
+      seriesRecent: '🆕 Sosac – Recently added series',
+      movieRated: '⭐ Sosac – Top rated movies',
+      seriesRated: '⭐ Sosac – Top rated series',
+      movieDub: '🎙️ Sosac – Dubbed movies',
+      seriesDub: '🎙️ Sosac – Dubbed series',
+      movieSubs: '💬 Sosac – Subtitled movies',
+      seriesSubs: '💬 Sosac – Subtitled series',
+      movieSearch: '🔎 Sosac – Search movies',
+      seriesSearch: '🔎 Sosac – Search series'
     }
   }[lang];
 }
@@ -116,18 +116,25 @@ function buildManifest(cfg, host) {
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'sosac_m_', 'sosac_s_', 'sosac_ep_'],
     resources: ['catalog', 'meta', 'stream', 'subtitles'],
+
+    // Pořadí je záměrně po dvojicích: nejdřív filmy, hned za nimi seriály.
     catalogs: [
       { type: 'movie', id: 'sm-popular', name: labels.moviePopular, extra: pageExtra },
-      { type: 'movie', id: 'sm-last-added', name: labels.movieRecent, extra: pageExtra },
-      { type: 'movie', id: 'sm-top-rated', name: labels.movieRated, extra: pageExtra },
-      { type: 'movie', id: 'sm-dubbing', name: labels.movieDub, extra: pageExtra },
-      { type: 'movie', id: 'sm-subtitles', name: labels.movieSubs, extra: pageExtra },
-      { type: 'movie', id: 'sm-search', name: labels.movieSearch, extra: searchExtra },
       { type: 'series', id: 'ss-popular', name: labels.seriesPopular, extra: pageExtra },
+
+      { type: 'movie', id: 'sm-last-added', name: labels.movieRecent, extra: pageExtra },
       { type: 'series', id: 'ss-last-added', name: labels.seriesRecent, extra: pageExtra },
+
+      { type: 'movie', id: 'sm-top-rated', name: labels.movieRated, extra: pageExtra },
       { type: 'series', id: 'ss-top-rated', name: labels.seriesRated, extra: pageExtra },
+
+      { type: 'movie', id: 'sm-dubbing', name: labels.movieDub, extra: pageExtra },
       { type: 'series', id: 'ss-dubbing', name: labels.seriesDub, extra: pageExtra },
+
+      { type: 'movie', id: 'sm-subtitles', name: labels.movieSubs, extra: pageExtra },
       { type: 'series', id: 'ss-subtitles', name: labels.seriesSubs, extra: pageExtra },
+
+      { type: 'movie', id: 'sm-search', name: labels.movieSearch, extra: searchExtra },
       { type: 'series', id: 'ss-search', name: labels.seriesSearch, extra: searchExtra }
     ],
     behaviorHints: { configurable: true, configurationRequired: false }
@@ -148,6 +155,8 @@ const SERIES_MAP = {
   'ss-top-rated': 'top-rated'
 };
 
+// Sosáč tyto dva seriálové seznamy vrací jako seznam epizod,
+// nikoli jako seznam seriálů. Je to stejné chování jako Kodi addon.
 const SERIES_EPISODE_MAP = {
   'ss-dubbing': 'news-with-dubbing',
   'ss-subtitles': 'news-with-subtitles'
@@ -156,10 +165,12 @@ const SERIES_EPISODE_MAP = {
 function parseExtra(extraRaw) {
   const result = {};
   if (!extraRaw) return result;
+
   extraRaw.replace(/\.json$/, '').split('&').forEach(part => {
     const i = part.indexOf('=');
     if (i > 0) result[part.slice(0, i)] = decodeURIComponent(part.slice(i + 1));
   });
+
   return result;
 }
 
@@ -247,11 +258,13 @@ function episodeSeriesTitles(item) {
 
 function safeIsoDate(value) {
   if (value === null || value === undefined || value === '') return undefined;
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     console.warn('[meta] Přeskakuji neplatné datum epizody:', value);
     return undefined;
   }
+
   return date.toISOString();
 }
 
@@ -278,6 +291,7 @@ function sosacCandidateScore(item, wantedTitles, year) {
   ]);
 
   let score = 0;
+
   for (const wanted of wantedTitles) {
     for (const candidate of candidateTitles) {
       score = Math.max(score, titleScore(wanted, candidate));
@@ -336,6 +350,7 @@ async function findBestSosacMatch(sosac, type, titles, year) {
     `[resolve] Sosáč ${type}: "${getLocalizedTitle(best, 'cs') || getLocalizedTitle(best, 'en')}" ` +
     `(score=${bestScore.toFixed(2)}, id=${best._id})`
   );
+
   return best;
 }
 
@@ -395,6 +410,7 @@ function episodeTitle(item, language = 'cs') {
 
 function episodePoster(item) {
   const raw = item && item.i;
+
   if (Array.isArray(raw)) {
     const found = raw.find(v => typeof v === 'string' && /^https?:\/\//i.test(v));
     if (found) return found;
@@ -618,6 +634,7 @@ async function resolveSosacForImdb(sosac, type, imdbId) {
   if (detail && typeof detail === 'object') {
     detail._resolvedSosacId = String(match._id);
   }
+
   return detail;
 }
 
@@ -650,6 +667,7 @@ async function cinemetaMetaWithLocalizedOverlay(sosac, type, imdbId, language) {
   if (!meta) return null;
 
   let sosacItem = null;
+
   try {
     if (type === 'movie') {
       sosacItem = await resolveSosacForImdb(sosac, 'movie', imdbId);
@@ -675,6 +693,7 @@ async function handleCatalog(req, res, extraRaw) {
   const page = Math.floor(skip / 100) + 1;
   const cacheKey = `catalog:${req.params.cfg}:${type}:${id}:${JSON.stringify(extra)}`;
   const cached = cache.get(cacheKey);
+
   if (cached) return res.json(cached);
 
   try {
@@ -713,7 +732,13 @@ async function handleCatalog(req, res, extraRaw) {
       }
 
       if (SERIES_EPISODE_MAP[id]) {
-        items = await sosac.getEpisodes(SERIES_EPISODE_MAP[id], page);
+        const listType = SERIES_EPISODE_MAP[id];
+        items = await sosac.getEpisodes(listType, page);
+
+        console.log(
+          `[catalog] ${id} → episodes/lists/${listType}: ` +
+          `${Array.isArray(items) ? items.length : 0} položek`
+        );
 
         const metas = await mapWithConcurrency(items, 8, item =>
           resolveEpisodeCatalogItem(item, cfg)
@@ -906,6 +931,8 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
   }
 });
 
+// Samostatný subtitle resource bude doplněn stejnou robustní logikou,
+// kterou používal původní titulkový addon. Zatím zde nic nefabrikujeme.
 app.get('/:cfg/subtitles/:type/:id.json', async (req, res) => {
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ subtitles: [] });
