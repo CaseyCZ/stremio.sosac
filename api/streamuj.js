@@ -1,5 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const NodeCache = require('node-cache');
 
 const QUALITY_LABELS = {
   HD: 'HD', SD: 'SD', FHD: '1080p', UHD: '4K', KINORIP: 'KinoRip', TVRIP: 'TVRip'
@@ -21,8 +22,18 @@ const ISO_LANG = {
 const LANG_ORDER = ['CZ', 'SK', 'EN'];
 const QUALITY_ORDER = ['UHD', 'FHD', 'HD', 'SD', 'KINORIP', 'TVRIP'];
 
+// Krátká sdílená cache. Stream URL mohou být časově omezené, proto jsou TTL záměrně krátké.
+// Její hlavní účel je zabránit duplicitám, když Stremio současně volá stream + subtitles.
+const videoLinksCache = new NodeCache({ stdTTL: 60, checkperiod: 30, maxKeys: 1200, useClones: true });
+const indirectUrlCache = new NodeCache({ stdTTL: 45, checkperiod: 30, maxKeys: 2400, useClones: false });
+const pendingVideoLinks = new Map();
+const pendingIndirectUrls = new Map();
+
 function md5(value) {
   return crypto.createHash('md5').update(String(value || '')).digest('hex');
+}
+function shortCacheKey(parts) {
+  return crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
 function normalizeLang(value) {
   const lang = String(value || '').trim().toUpperCase();
@@ -176,17 +187,43 @@ class StreamujApi {
     return `pass=${encodeURIComponent(this.username)}%3A%3A%3A${this.passwordHash}; sublanguage=1; quality=1; videolanguage=cs`;
   }
 
+  videoLinksCacheKey(linkId, device) {
+    return shortCacheKey([
+      this.provider,
+      this.username,
+      this.passwordHash,
+      this.location,
+      String(linkId),
+      Number(device)
+    ]);
+  }
+
   async getVideoLinks(linkId, device = 18) {
     if (!this.isConfigured() || !linkId) return null;
-    const response = await this.http.get(`https://${this.provider}/json_api_player.php`, {
+
+    const key = this.videoLinksCacheKey(linkId, device);
+    const cached = videoLinksCache.get(key);
+    if (cached !== undefined) return cached;
+
+    const existing = pendingVideoLinks.get(key);
+    if (existing) return existing;
+
+    const pending = this.http.get(`https://${this.provider}/json_api_player.php`, {
       params: { action: 'get-video-links', d: device, link: linkId, login: this.username, password: this.passwordHash, location: this.location }
+    }).then(response => {
+      const data = response.data;
+      videoLinksCache.set(key, data, 60);
+      try { console.log(`[streamuj summary d=${device} link=${linkId}] ${JSON.stringify(safeResponseSummary(data))}`); } catch (_) {}
+      if (this.debugRaw) {
+        try { console.log(`[streamuj RAW d=${device} link=${linkId}]\n${JSON.stringify(data, null, 2).slice(0, 12000)}`); } catch (_) {}
+      }
+      return data;
+    }).finally(() => {
+      if (pendingVideoLinks.get(key) === pending) pendingVideoLinks.delete(key);
     });
-    const data = response.data;
-    try { console.log(`[streamuj summary d=${device} link=${linkId}] ${JSON.stringify(safeResponseSummary(data))}`); } catch (_) {}
-    if (this.debugRaw) {
-      try { console.log(`[streamuj RAW d=${device} link=${linkId}]\n${JSON.stringify(data, null, 2).slice(0, 12000)}`); } catch (_) {}
-    }
-    return data;
+
+    pendingVideoLinks.set(key, pending);
+    return pending;
   }
 
   async getSubtitleTracksFromHtml(linkId) {
@@ -243,6 +280,9 @@ class StreamujApi {
   async getSubtitleTracks(linkId) {
     const tracks = [];
     const seen = new Set();
+
+    // d=19 je ověřená titulková cesta. d=18 ponecháváme kvůli úplnosti,
+    // ale díky sdílené 60s cache se při současném stream requestu znovu nestahuje.
     for (const device of [19, 18]) {
       try {
         const data = await this.getVideoLinks(linkId, device);
@@ -289,45 +329,83 @@ class StreamujApi {
 
   async resolveIndirectUrl(url) {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
-    try {
-      const response = await this.http.get(url, { responseType: 'text' });
-      const body = typeof response.data === 'string' ? response.data.trim() : String(response.data || '').trim();
-      return /^https?:\/\//i.test(body) ? body : url;
-    } catch (error) {
-      console.warn(`[streamuj] resolve failed: ${error.message}`);
-      return url;
-    }
+
+    const key = shortCacheKey(['resolve', url]);
+    const cached = indirectUrlCache.get(key);
+    if (cached !== undefined) return cached;
+
+    const existing = pendingIndirectUrls.get(key);
+    if (existing) return existing;
+
+    const pending = this.http.get(url, { responseType: 'text' })
+      .then(response => {
+        const body = typeof response.data === 'string' ? response.data.trim() : String(response.data || '').trim();
+        const result = /^https?:\/\//i.test(body) ? body : url;
+        indirectUrlCache.set(key, result, 45);
+        return result;
+      })
+      .catch(error => {
+        console.warn(`[streamuj] resolve failed: ${error.message}`);
+        return url;
+      })
+      .finally(() => {
+        if (pendingIndirectUrls.get(key) === pending) pendingIndirectUrls.delete(key);
+      });
+
+    pendingIndirectUrls.set(key, pending);
+    return pending;
   }
 
   async getStreams(linkId, options = {}) {
     const data = await this.getVideoLinks(linkId, 18);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
+
     const prepareSubtitles = typeof options.prepareSubtitles === 'function' ? options.prepareSubtitles : null;
     let rawSubtitles = collectSubtitleTracksFromData(data, this.provider);
     if (!rawSubtitles.length && prepareSubtitles) rawSubtitles = await this.getSubtitleTracks(linkId);
-    const preparedSubtitles = prepareSubtitles
-      ? await prepareSubtitles(rawSubtitles)
-      : rawSubtitles.map(sub => ({ id: sub.id, lang: sub.lang, url: sub.directUrl }));
-    const result = [];
 
+    const preparedPromise = prepareSubtitles
+      ? prepareSubtitles(rawSubtitles)
+      : Promise.resolve(rawSubtitles.map(sub => ({ id: sub.id, lang: sub.lang, url: sub.directUrl })));
+
+    const jobs = [];
     for (const [rawLang, langData] of Object.entries(data.URL)) {
       if (!langData || typeof langData !== 'object') continue;
       const lang = normalizeLang(rawLang);
+
       for (const [rawQuality, indirectUrl] of Object.entries(langData)) {
         if (rawQuality === 'subtitles' || typeof indirectUrl !== 'string' || !/^https?:\/\//i.test(indirectUrl)) continue;
         const quality = String(rawQuality).toUpperCase();
-        const finalUrl = await this.resolveIndirectUrl(indirectUrl);
-        if (!finalUrl) continue;
-        const stream = { lang, quality, url: finalUrl, subtitles: rawSubtitles };
-        result.push({
-          url: finalUrl,
-          name: `Sosáč • ${QUALITY_LABELS[quality] || quality}`,
-          description: buildDescription(stream),
-          subtitles: preparedSubtitles,
-          behaviorHints: { notWebReady: true, bingeGroup: `sosac-${lang.toLowerCase()}-${quality.toLowerCase()}` },
-          _sort: { lang: langIndex(lang), quality: qualityIndex(quality) }
-        });
+
+        jobs.push((async () => {
+          const finalUrl = await this.resolveIndirectUrl(indirectUrl);
+          if (!finalUrl) return null;
+          return {
+            lang,
+            quality,
+            finalUrl
+          };
+        })());
       }
+    }
+
+    const [preparedSubtitles, resolved] = await Promise.all([
+      preparedPromise,
+      Promise.all(jobs)
+    ]);
+
+    const result = [];
+    for (const item of resolved) {
+      if (!item) continue;
+      const stream = { lang: item.lang, quality: item.quality, url: item.finalUrl, subtitles: rawSubtitles };
+      result.push({
+        url: item.finalUrl,
+        name: `Sosáč • ${QUALITY_LABELS[item.quality] || item.quality}`,
+        description: buildDescription(stream),
+        subtitles: preparedSubtitles,
+        behaviorHints: { notWebReady: true, bingeGroup: `sosac-${item.lang.toLowerCase()}-${item.quality.toLowerCase()}` },
+        _sort: { lang: langIndex(item.lang), quality: qualityIndex(item.quality) }
+      });
     }
 
     result.sort((a, b) => a._sort.lang - b._sort.lang || a._sort.quality - b._sort.quality);
