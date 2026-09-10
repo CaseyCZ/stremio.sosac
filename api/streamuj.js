@@ -94,10 +94,41 @@ function buildDescription(stream) {
   return `${audio}\n${subs}\n${quality}`;
 }
 
+function safeResponseSummary(data) {
+  const summary = {
+    ok: Boolean(data && typeof data === 'object'),
+    topLevelKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+    streams: []
+  };
+
+  if (!data || !data.URL || typeof data.URL !== 'object') return summary;
+
+  for (const [rawLang, langData] of Object.entries(data.URL)) {
+    if (!langData || typeof langData !== 'object') continue;
+
+    const qualities = Object.entries(langData)
+      .filter(([key, value]) => key !== 'subtitles' && typeof value === 'string')
+      .map(([key]) => String(key).toUpperCase());
+
+    const subtitleLanguages = langData.subtitles && typeof langData.subtitles === 'object'
+      ? Object.keys(langData.subtitles).map(normalizeLang)
+      : [];
+
+    summary.streams.push({
+      audio: normalizeLang(rawLang),
+      qualities,
+      subtitles: subtitleLanguages
+    });
+  }
+
+  return summary;
+}
+
 class StreamujApi {
   constructor(options = {}) {
     this.username = String(options.username || '').trim();
-    this.passwordHash = md5(options.password || '');
+    this.hasPassword = Boolean(String(options.password || ''));
+    this.passwordHash = this.hasPassword ? md5(options.password) : '';
     this.provider = options.provider || 'www.streamuj.tv';
     this.location = String(options.location) === '2' ? '2' : '1';
     this.debugRaw = options.debugRaw === true;
@@ -111,7 +142,7 @@ class StreamujApi {
   }
 
   isConfigured() {
-    return Boolean(this.username && this.passwordHash);
+    return Boolean(this.username && this.hasPassword && this.passwordHash);
   }
 
   async getVideoLinks(linkId) {
@@ -129,12 +160,18 @@ class StreamujApi {
     });
 
     const data = response.data;
+
+    try {
+      console.log(`[streamuj summary link=${linkId}] ${JSON.stringify(safeResponseSummary(data))}`);
+    } catch (_) {}
+
     if (this.debugRaw) {
       try {
         const raw = JSON.stringify(data, null, 2);
         console.log(`[streamuj RAW link=${linkId}]\n${raw.slice(0, 12000)}`);
       } catch (_) {}
     }
+
     return data;
   }
 
