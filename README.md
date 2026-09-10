@@ -1,107 +1,178 @@
-# stremio.sosac
+# 🎬 Sosáč + Streamuj.tv pro Stremio
 
-Nový konfigurovatelný Stremio addon pro obsah ze Sosáče / Streamuj.tv.
+Neoficiální komunitní doplněk pro [Stremio](https://www.stremio.com/), který propojuje katalogy a metadata se zdroji **Sosáč / Streamuj.tv**.
 
-## Cíl
+Addon je zaměřený na české a slovenské uživatele. Používá **IMDb ID (`tt...`)** tam, kde je možné titul správně spárovat, takže se může lépe propojit s položkami z Cinemety, Traktu, vyhledávání Stremia, knihovny a historie sledování.
 
-Addon má nabídnout filmy a seriály s českou, slovenskou a anglickou lokalizací, více variantami zvuku a titulků, metadata přes Cinemetu/TMDB, trailery a později doplňkové katalogy.
+> Projekt nehostuje video soubory. Video streamy jsou přehrávány přímo ze zdroje Streamuj.tv. Server addonu zajišťuje pouze Stremio API, párování titulů, metadata a přípravu titulků.
 
-## Aktuální stav
+## 🚀 Rychlá instalace
 
-První kostra projektu obsahuje:
+👉 **[Otevřít konfiguraci addonu](https://stremio-sosac-w8dk.onrender.com/configure)**
 
-- Express server pro Stremio endpointy
-- konfigurovatelný manifest přes `/:cfg/manifest.json`
-- webovou konfiguraci `/configure`
-- volbu jazyka metadat: `cs`, `sk`, `en`
-- samostatnou volbu preferovaných jazyků zvuku: `CZ`, `SK`, `EN`
-- samostatnou volbu preferovaných titulků: `cze`, `slk`, `eng`
-- připravené endpointy `catalog`, `meta`, `stream`, `subtitles`
+1. Otevři konfigurační stránku.
+2. Vyber jazyk metadat / rozhraní.
+3. Zadej přihlašovací údaje pro **Sosáč** a **Streamuj.tv**.
+4. Klikni na **Vygenerovat instalační odkaz**.
+5. Klikni na **Nainstalovat do Stremia** a potvrď instalaci.
 
-## Důležité pravidlo jazyků
+👉 [Stremio – Downloads](https://www.stremio.com/downloads)
 
-Jazyk metadat, zvuk a titulky jsou tři nezávislé věci.
+## ✨ Hlavní funkce
 
-Příklad konfigurace:
+- 🎬 **Filmy a seriály ze Sosáče** – katalogy, vyhledávání, detail titulu a epizody.
+- 🔗 **IMDb / Cinemeta propojení** – při dostupném IMDb ID používá addon standardní `tt...` identifikátor Stremia.
+- 🧠 **Fallback párování podle názvu a roku** – pokud IMDb ID v Sosáči chybí, addon se pokusí najít odpovídající titul přes Cinemetu.
+- 🇨🇿 🇸🇰 🇬🇧 **Více jazykových variant zvuku** – addon zachovává dostupné jazykové větve Streamuj.tv.
+- 📺 **Více kvalit streamu** – podle zdroje například SD, HD, 1080p nebo další dostupné varianty.
+- 💬 **CZ/SK titulky** – subtitle tracky se načítají ze Streamuj.tv a připravují jako veřejné HTTPS WebVTT soubory.
+- 🎞️ **Převod SRT → WebVTT** – kvůli lepší kompatibilitě mezi různými Stremio klienty.
+- 🖼️ **Cinemeta metadata + Sosáč fallback** – pokud Cinemeta nemá obrázek, addon se pokusí použít artwork ze Sosáče.
+- ⚡ **Cache a omezení zbytečných API požadavků** – opakované katalogy, metadata a mapování se drží dočasně v paměti serveru.
+- 🌐 **Hosting na Renderu** – addon běží jako lehká API vrstva; samotné video přes Render neprochází.
 
-```json
-{
-  "uiLanguage": "cs",
-  "audioLanguages": ["CZ", "SK", "EN"],
-  "subtitleLanguages": ["cze", "slk", "eng"]
-}
-```
+## 🗂️ Katalogy
 
-Stream resolver nebude zahazovat varianty jen proto, že existuje více jazyků. Výsledné streamy mají být seřazené podle uživatelské preference a jasně označené například:
+Aktuální manifest obsahuje katalogy pro filmy a seriály v tomto pořadí:
 
-- `🇨🇿 CZ • 1080p`
-- `🇸🇰 SK • 1080p`
-- `🇬🇧 EN • 720p`
+- 🔥 Oblíbené
+- 🆕 Nové
+- ⭐ Nejlépe hodnocené
+- 🎙️ S dabingem
+- 💬 S titulky – podle dostupnosti dat Sosáče / Streamuj.tv
+- 🔎 Hledat
 
-Titulky mají být vracené jako samostatné Stremio subtitle objekty s unikátním `id`, `url` a ISO jazykovým kódem.
+Některé seriálové seznamy Sosáč poskytuje jako seznam epizod, nikoli jako klasický seznam seriálů. Addon proto musí tyto odpovědi převádět do formátu vhodného pro Stremio.
 
-## Plánovaná architektura
+## 🧩 Jak addon funguje
 
 ```text
-addon.js
-api/
-  sosac.js        # Sosáč katalogy, filmy, seriály, epizody
-  streamuj.js     # streamy, jazykové a kvalitativní varianty
-  cinemeta.js     # kompletní metadata a trailery podle IMDb ID
-  tmdb.js         # CZ/SK/EN metadata a párování IMDb/TMDB
-  csfd.js         # žebříčky / mapování katalogů
-  trakt.js        # volitelná integrace Trakt
-lib/
-  config.js       # validace konfigurace
-  language.js     # priority jazyků, normalizace CZ/SK/EN
-  matcher.js      # párování titulů a roků
-public/
-  configure.html
+Stremio / Cinemeta / Trakt
+          │
+          │ IMDb ID (tt...)
+          ▼
+      stremio.sosac
+          │
+          ├── Cinemeta → metadata, plakáty, série a epizody
+          │
+          ├── Sosáč → katalogy, české/slovenské informace,
+          │           interní ID a Streamuj link ID
+          │
+          └── Streamuj.tv → dostupné audio / kvality / titulky
+                              │
+                              ├── video URL → přímo do Stremia
+                              └── titulky → Render → WebVTT → Stremio
 ```
 
-## Metadata a trailery
+Cílem je, aby stejný titul používal stejné IMDb ID bez ohledu na to, zda ho uživatel otevře z katalogu addonu, Cinemety, Traktu nebo jiného kompatibilního katalogu.
 
-Cílové pořadí zdrojů:
+## 💬 Titulky
 
-1. správné IMDb ID jako hlavní Stremio identifikátor (`tt...`)
-2. Cinemeta pro kompletní metadata a `trailerStreams`
-3. český/slovenský/anglický překlad přes Sosáč nebo TMDB podle konfigurace
-4. Sosáč/Streamuj pouze jako zdroj dostupných streamů a titulků
+Addon podporuje standardní Stremio `subtitles` resource i titulky připojené přímo k našim streamům.
 
-Pozor: hodnota hodnocení IMDb nesmí být zaměněna za IMDb ID.
+Titulky se nepřesměrovávají přes `127.0.0.1`, ale připravují se na serveru a Stremio dostane veřejnou HTTPS adresu ve tvaru:
 
-## Titulky
+```text
+https://.../subtitle-file/v1/<hash>.vtt
+```
 
-Addon bude vracet všechny dostupné požadované jazyky. Kde to konkrétní Stremio klient podporuje, lze využít lokální streaming server Stremia pro načtení a převod externího subtitle souboru. Kompatibilitu je potřeba testovat zvlášť na Desktop, Android/Google TV, Web/iOS a Apple TV.
+To omezuje závislost na lokálním Stremio streaming serveru a zlepšuje kompatibilitu mezi Desktopem, Webem, Android/Google TV a Apple zařízeními.
 
-## Roadmap
+## ⚡ Výkon a cache
 
-- [x] základ repozitáře
-- [x] konfigurační stránka
-- [x] volby CZ/SK/EN pro metadata
-- [x] samostatné volby zvuku a titulků
-- [ ] Sosáč API klient
-- [ ] Streamuj resolver s více audio variantami
-- [ ] subtitle resolver
-- [ ] IMDb ID resolver
-- [ ] Cinemeta metadata + trailery
-- [ ] TMDB CZ/SK/EN overlay
-- [ ] všechny Sosáč movie/series katalogy
-- [ ] CSFD Nejlepší / Nejoblíbenější
-- [ ] Trakt integrace
-- [ ] cache a ochrana proti rate-limitům
-- [ ] kompatibilitní testy Stremio klientů
-- [ ] Docker / hosting konfigurace
+Addon je navržený tak, aby zbytečně nezatěžoval Sosáč, Cinemetu, Streamuj.tv ani hosting na Renderu.
 
-## Lokální spuštění
+Používá například:
+
+- krátkodobou cache katalogů a detailů,
+- dlouhodobější cache IMDb ↔ Sosáč mapování,
+- sdílení souběžných stejných požadavků,
+- krátkou cache Streamuj API odpovědí,
+- lokální cache již připravených WebVTT titulků.
+
+Video data nejsou proxyována přes Render – addon vrací klientovi přímou URL streamu.
+
+## 🔒 Soukromí a přihlašovací údaje
+
+Konfigurační stránka vygeneruje instalační URL obsahující konfiguraci zakódovanou pomocí **Base64URL**.
+
+**Base64 není šifrování.** Instalační URL proto může obsahovat citlivé přihlašovací údaje v podobě, kterou lze zpětně dekódovat.
+
+- instalační URL **nikdy nesdílej veřejně**,
+- nevkládej ji do veřejných issue, screenshotů ani logů,
+- používej pouze HTTPS,
+- na sdíleném zařízení zacházej s instalačním odkazem jako s heslem.
+
+Addon nemá vlastní databázi uživatelských účtů. Přihlašovací údaje se používají pouze pro komunikaci se službami, které addon potřebuje pro získání dostupného obsahu.
+
+## 🛠️ Lokální spuštění
+
+Požadavek: **Node.js 20+**
 
 ```bash
 npm install
 npm start
 ```
 
-Potom otevřít:
+Potom otevři:
 
 ```text
 http://localhost:7000/configure
 ```
+
+Zdravotní stav serveru:
+
+```text
+http://localhost:7000/health
+```
+
+## 📁 Struktura projektu
+
+```text
+addon.js
+api/
+  sosac.js            # Sosáč katalogy, filmy, seriály a epizody
+  streamuj.js         # Streamuj.tv streamy, kvality, audio a titulky
+  cinemeta.js         # Cinemeta metadata a IMDb párování
+  subtitle-files.js   # stažení, převod, cache a servírování WebVTT
+public/
+  configure.html      # webová konfigurace addonu
+render.yaml            # deployment na Render
+```
+
+## 📚 Zdroje a reference
+
+Při vývoji byly jako technické reference použity veřejně dostupné projekty, API struktury a dokumentace:
+
+- **Sosáč official Kodi repository** – https://sosac.tv/sosacRepo/
+- **kodi-czsk / plugin.video.sosac.ph** – https://github.com/kodi-czsk/plugin.video.sosac.ph
+- **Matt5454 / Sosio** – https://github.com/Matt5454/Sosio
+- **Původní samostatný subtitle addon** – https://github.com/CaseyCZ/stremio.sosac.subtitles
+- **Stremio Addon SDK / dokumentace** – https://stremio.github.io/stremio-addon-guide/
+- **Cinemeta** – metadata používaná ekosystémem Stremio
+- **Sosáč.tv / Sosáč API** – zdroj katalogových a obsahových informací
+- **Streamuj.tv** – zdroj dostupných stream variant a titulků
+
+## 🙏 Poděkování
+
+Velké díky patří:
+
+- autorům a správcům **Sosáče** za službu a dlouhodobý vývoj Kodi doplňků,
+- týmu **kodi-czsk** a všem přispěvatelům projektu `plugin.video.sosac.ph` za veřejně dostupnou implementaci a technické informace,
+- **Matt5454** za projekt **Sosio**, který byl užitečnou referencí při pochopení struktury Streamuj.tv a Stremio streamů,
+- vývojářům **Stremio** za otevřený addon ekosystém a dokumentaci,
+- komunitě, která addon testuje na různých platformách a pomáhá odhalovat rozdíly mezi jednotlivými Stremio klienty.
+
+## ⚠️ Upozornění
+
+Tento projekt je **neoficiální komunitní addon** a není oficiálně spojen ani podporován službami **Stremio, Sosáč.tv, Streamuj.tv, Cinemeta, Trakt** ani jejich provozovateli.
+
+Repozitář neobsahuje ani nehostuje video obsah. Dostupnost streamů, metadat a titulků závisí na externích službách a může se kdykoliv změnit.
+
+Používej addon v souladu s podmínkami jednotlivých služeb a s právními předpisy platnými ve tvé zemi.
+
+---
+
+### ❤️ Projekt
+
+Pokud najdeš chybu nebo nefunkční titul / epizodu, je nejlepší přiložit **IMDb ID, název, sérii a číslo epizody** a část serverového logu bez přihlašovacích údajů a bez instalační URL.
