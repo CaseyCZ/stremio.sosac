@@ -81,13 +81,20 @@ function numberOrUndefined(value) {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function normalizeRating(value) {
+  const rating = numberOrUndefined(value);
+  if (rating === undefined) return undefined;
+  if (rating > 10 && rating <= 100) return rating / 10;
+  return rating;
+}
+
 function movieToMeta(item, language = 'cs') {
   if (!item || item._id === undefined || item._id === null) return null;
   const name = getLocalizedTitle(item, language);
   if (!name) return null;
 
   const year = numberOrUndefined(item.y);
-  const rating = numberOrUndefined(item.m);
+  const rating = normalizeRating(item.m);
   const durationSeconds = numberOrUndefined(item.dl);
 
   return {
@@ -114,7 +121,7 @@ function seriesToMeta(item, language = 'cs') {
   if (!name) return null;
 
   const year = numberOrUndefined(item.y);
-  const rating = numberOrUndefined(item.m);
+  const rating = normalizeRating(item.m);
 
   return {
     id: `sosac_s_${item._id}`,
