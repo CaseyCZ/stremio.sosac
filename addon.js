@@ -19,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.4';
+const VERSION = '0.4.3';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -431,21 +431,6 @@ function findEpisodeInDetail(detail, season, episode) {
   }
   return null;
 }
-async function loadEpisodeDetail(sosac, episode) {
-  if (!episode || episode._id === undefined || episode._id === null) return episode || null;
-  try {
-    const detail = await sosac.getEpisode(episode._id);
-    if (detail && typeof detail === 'object') return detail;
-  } catch (error) {
-    console.warn(`[resolve] Detail epizody ${episode._id} selhal: ${error.message}`);
-  }
-  return episode;
-}
-async function resolveEpisodeFromSeriesDetail(sosac, detail, season, episode) {
-  const selected = findEpisodeInDetail(detail, season, episode);
-  if (!selected) return null;
-  return loadEpisodeDetail(sosac, selected);
-}
 async function cinemetaMetaWithLocalizedOverlay(sosac, type, imdbId, language) {
   const meta = await cinemeta.getMeta(type, imdbId);
   if (!meta) return null;
@@ -476,20 +461,14 @@ async function resolveLinkId(sosac, type, id) {
       const ep = await sosac.getEpisode(id.slice('sosac_ep_'.length));
       return ep && ep.l;
     }
-
-    const sosacMatch = id.match(/^sosac_s_([^:]+):(\d+):(\d+)$/i);
-    if (sosacMatch) {
-      const [, seriesId, seasonRaw, episodeRaw] = sosacMatch;
-      const detail = await sosac.getSeriesDetail(seriesId);
-      const ep = await resolveEpisodeFromSeriesDetail(sosac, detail, Number(seasonRaw), Number(episodeRaw));
-      return ep && ep.l;
-    }
-
-    const imdbMatch = id.match(/^(tt\d{5,10}):(\d+):(\d+)$/i);
-    if (imdbMatch) {
-      const [, imdbId, seasonRaw, episodeRaw] = imdbMatch;
+    const match = id.match(/^(tt\d{5,10}):(\d+):(\d+)$/i);
+    if (match) {
+      const [, imdbId, seasonRaw, episodeRaw] = match;
       const detail = await resolveSosacForImdb(sosac, 'series', imdbId.toLowerCase());
-      const ep = await resolveEpisodeFromSeriesDetail(sosac, detail, Number(seasonRaw), Number(episodeRaw));
+      let ep = findEpisodeInDetail(detail, Number(seasonRaw), Number(episodeRaw));
+      if (ep && !ep.l && ep._id !== undefined && ep._id !== null) {
+        try { ep = await sosac.getEpisode(ep._id); } catch (_) {}
+      }
       return ep && ep.l;
     }
   }
