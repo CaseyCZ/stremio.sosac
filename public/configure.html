@@ -3,51 +3,126 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Sosáč Stremio Addon</title>
+  <title>Sosáč + Streamuj.tv pro Stremio</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;background:#111;color:#eee}
-    h1{margin-bottom:8px}.card{background:#1c1c1c;border-radius:14px;padding:22px;margin:18px 0}label{display:block;margin:14px 0 6px}input,select{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid #444;background:#222;color:#fff}button{margin-top:18px;padding:12px 18px;border:0;border-radius:9px;cursor:pointer;font-weight:700}.hint{opacity:.75;font-size:.92rem}.note{margin:16px 0;padding:12px 14px;border-radius:9px;background:#252525;color:#ccc;font-size:.92rem;line-height:1.45}#result{word-break:break-all;margin-top:16px}
+    :root{color-scheme:dark;--bg:#0b1020;--panel:#111827;--panel2:#172033;--border:#2a3850;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--accent2:#0284c7;--ok:#86efac}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#172554 0,#0b1020 42%,#070b14 100%);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--text)}
+    .wrap{width:min(100%,560px)}
+    .card{background:rgba(17,24,39,.96);border:1px solid var(--border);border-radius:22px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+    .badge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid #1d4ed8;border-radius:999px;background:#0f1f46;color:#bfdbfe;font-size:.78rem;font-weight:700}
+    h1{margin:14px 0 6px;font-size:1.65rem;line-height:1.15}
+    .lead{margin:0 0 24px;color:var(--muted);line-height:1.5}
+    .field{margin:16px 0}
+    label{display:block;margin-bottom:7px;color:#dbeafe;font-size:.9rem;font-weight:650}
+    input,select{width:100%;min-height:46px;border:1px solid var(--border);border-radius:12px;background:#0b1220;color:var(--text);padding:0 13px;font:inherit;outline:none}
+    input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(56,189,248,.12)}
+    .input-row,.result-row{display:flex;gap:8px;align-items:stretch}
+    .input-row input,.result-row input{min-width:0;flex:1}
+    button,.btn{border:0;border-radius:12px;background:var(--accent2);color:#fff;font:inherit;font-weight:750;cursor:pointer;text-decoration:none;text-align:center;transition:.15s ease}
+    button:hover,.btn:hover{filter:brightness(1.12)}
+    .toggle,.copy{flex:0 0 auto;padding:0 13px;background:#243149;border:1px solid var(--border)}
+    .primary{width:100%;min-height:48px;margin-top:10px;font-size:1rem}
+    .note{margin:18px 0;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--panel2);color:#cbd5e1;font-size:.86rem;line-height:1.45}
+    #result{display:none;margin-top:22px;padding-top:20px;border-top:1px solid var(--border)}
+    #installUrl{font-size:.78rem}
+    .btn{display:block;width:100%;padding:13px;margin-top:10px}
+    #status{min-height:20px;margin-top:12px;color:var(--ok);font-size:.86rem}
+    .foot{margin:14px 4px 0;color:#64748b;text-align:center;font-size:.76rem}
+    @media(max-width:520px){body{padding:14px}.card{padding:21px}.input-row,.result-row{gap:6px}.toggle,.copy{padding:0 10px}}
   </style>
 </head>
 <body>
-  <h1>🎬 Sosáč Stremio Addon</h1>
-  <p class="hint">Konfigurace jazyka metadat a přihlašovacích údajů.</p>
+  <main class="wrap">
+    <section class="card">
+      <span class="badge">🎬 Hlavní addon</span>
+      <h1>Sosáč + Streamuj.tv</h1>
+      <p class="lead">Nastav přihlášení a vygeneruj instalační odkaz pro Stremio.</p>
 
-  <div class="card">
-    <label for="uiLanguage">Jazyk metadat / rozhraní</label>
-    <select id="uiLanguage">
-      <option value="cs">Čeština</option>
-      <option value="sk">Slovenština</option>
-      <option value="en">English</option>
-    </select>
+      <div class="field">
+        <label for="uiLanguage">Jazyk metadat</label>
+        <select id="uiLanguage">
+          <option value="cs">Čeština</option>
+          <option value="sk">Slovenština</option>
+          <option value="en">English</option>
+        </select>
+      </div>
 
-    <div class="note">
-      🎧 Zvuk a 💬 titulky se nefiltrují zde. Addon zobrazí všechny varianty, které jsou u konkrétního videa dostupné. Výběr probíhá až ve Stremiu.
-    </div>
+      <div class="field">
+        <label for="sosacUser">Sosáč uživatel</label>
+        <input id="sosacUser" autocomplete="username" placeholder="Uživatelské jméno">
+      </div>
 
-    <label for="sosacUser">Sosáč uživatel</label>
-    <input id="sosacUser" autocomplete="username">
+      <div class="field">
+        <label for="sosacPass">Sosáč heslo</label>
+        <div class="input-row">
+          <input id="sosacPass" type="password" autocomplete="current-password" placeholder="••••••••">
+          <button class="toggle" type="button" data-target="sosacPass">Zobrazit</button>
+        </div>
+      </div>
 
-    <label for="sosacPass">Sosáč heslo</label>
-    <input id="sosacPass" type="password" autocomplete="current-password">
+      <div class="field">
+        <label for="streamujUser">Streamuj.tv uživatel</label>
+        <input id="streamujUser" autocomplete="username" placeholder="Uživatelské jméno">
+      </div>
 
-    <label for="streamujUser">Streamuj.tv uživatel</label>
-    <input id="streamujUser" autocomplete="username">
+      <div class="field">
+        <label for="streamujPass">Streamuj.tv heslo</label>
+        <div class="input-row">
+          <input id="streamujPass" type="password" autocomplete="current-password" placeholder="••••••••">
+          <button class="toggle" type="button" data-target="streamujPass">Zobrazit</button>
+        </div>
+      </div>
 
-    <label for="streamujPass">Streamuj.tv heslo</label>
-    <input id="streamujPass" type="password" autocomplete="current-password">
+      <div class="note">Instalační konfigurace je v odkazu zapsaná jako Base64URL. Není běžně čitelná na první pohled, ale Base64 není šifrování, proto instalační odkaz nesdílej.</div>
 
-    <button id="generate">Vygenerovat instalační odkaz</button>
-    <div id="result"></div>
-  </div>
+      <button id="generate" class="primary" type="button">Vygenerovat instalační odkaz</button>
+
+      <div id="result">
+        <div class="field">
+          <label for="installUrl">Instalační odkaz</label>
+          <div class="result-row">
+            <input id="installUrl" type="text" readonly spellcheck="false">
+            <button id="copyUrl" class="copy" type="button">Kopírovat</button>
+          </div>
+        </div>
+        <a id="stremioBtn" class="btn" href="#">Instalovat do Stremio</a>
+        <div id="status" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+    <div class="foot">Neoficiální komunitní addon pro Stremio.</div>
+  </main>
 
 <script>
 function toBase64Url(obj){
-  const bytes = new TextEncoder().encode(JSON.stringify(obj));
-  let binary=''; bytes.forEach(b=>binary+=String.fromCharCode(b));
+  const bytes=new TextEncoder().encode(JSON.stringify(obj));
+  let binary='';
+  bytes.forEach(b=>binary+=String.fromCharCode(b));
   return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
-document.getElementById('generate').onclick=()=>{
+
+function copyText(value,input,status){
+  if(!value)return;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(value).then(()=>status.textContent='Odkaz zkopírován.').catch(()=>fallback());
+  }else fallback();
+  function fallback(){
+    input.focus();input.select();
+    try{document.execCommand('copy');status.textContent='Odkaz zkopírován.';}
+    catch(e){status.textContent='Odkaz je označený. Zkopíruj ho ručně.';}
+  }
+}
+
+document.querySelectorAll('.toggle').forEach(button=>{
+  button.addEventListener('click',()=>{
+    const input=document.getElementById(button.dataset.target);
+    const show=input.type==='password';
+    input.type=show?'text':'password';
+    button.textContent=show?'Skrýt':'Zobrazit';
+  });
+});
+
+document.getElementById('generate').addEventListener('click',()=>{
   const cfg={
     uiLanguage:document.getElementById('uiLanguage').value,
     sosacUser:document.getElementById('sosacUser').value.trim(),
@@ -55,11 +130,26 @@ document.getElementById('generate').onclick=()=>{
     streamujUser:document.getElementById('streamujUser').value.trim(),
     streamujPass:document.getElementById('streamujPass').value
   };
+  const status=document.getElementById('status');
+  if(!cfg.sosacUser||!cfg.sosacPass||!cfg.streamujUser||!cfg.streamujPass){
+    document.getElementById('result').style.display='block';
+    status.textContent='Vyplň všechna přihlašovací pole.';
+    return;
+  }
   const encoded=toBase64Url(cfg);
-  const manifest=`${location.origin}/${encoded}/manifest.json`;
-  const install=`stremio://${location.host}/${encoded}/manifest.json`;
-  document.getElementById('result').innerHTML=`<p><b>Manifest:</b><br>${manifest}</p><p><a href="${install}">Nainstalovat do Stremia</a></p>`;
-};
+  const path=`/${encoded}/manifest.json`;
+  const manifest=`${location.origin}${path}`;
+  const install=`stremio://${location.host}${path}`;
+  document.getElementById('installUrl').value=manifest;
+  document.getElementById('stremioBtn').href=install;
+  document.getElementById('result').style.display='block';
+  status.textContent='Odkaz je připravený.';
+});
+
+document.getElementById('copyUrl').addEventListener('click',()=>{
+  const input=document.getElementById('installUrl');
+  copyText(input.value,input,document.getElementById('status'));
+});
 </script>
 </body>
 </html>
