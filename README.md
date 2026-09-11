@@ -1,102 +1,51 @@
 # 🎬 Sosáč + Streamuj.tv pro Stremio
 
-Neoficiální komunitní doplněk pro Stremio, který propojuje katalogy a metadata se zdroji **Sosáč / Streamuj.tv**.
+Neoficiální komunitní addon pro **Stremio**, který přidává katalogy, metadata a streamy ze **Sosáč / Streamuj.tv**.
 
-Addon používá IMDb ID (`tt...`) tam, kde je možné titul správně spárovat, a podporuje katalogy, metadata, streamy i titulky.
+![Aktuální verze](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FCaseyCZ%2Fstremio.sosac%2FMaster%2Fpackage.json&query=%24.version&label=Aktu%C3%A1ln%C3%AD%20verze&color=blue&prefix=v)
 
 ## 🚀 Rychlá instalace
 
 👉 **[Otevřít konfiguraci addonu](https://130.61.49.108/configure)**
 
-1. Otevři konfigurační stránku.
-2. Vyber jazyk metadat / rozhraní.
-3. Zadej přihlašovací údaje pro **Sosáč** a **Streamuj.tv**.
-4. Klikni na **Vygenerovat instalační odkaz**.
-5. Nainstaluj addon do Stremia.
+1. Vyber jazyk metadat.
+2. Zadej přihlašovací údaje pro **Sosáč** a **Streamuj.tv**.
+3. Klikni na **Vygenerovat instalační odkaz**.
+4. Odkaz můžeš zkopírovat nebo addon rovnou nainstalovat do Stremia.
 
 ## ✨ Hlavní funkce
 
 - 🎬 filmy a seriály ze Sosáče
-- 🔗 IMDb / Cinemeta propojení
-- 🧠 fallback párování podle názvu a roku
-- 🇨🇿 🇸🇰 🇬🇧 více jazykových variant zvuku
-- 📺 více kvalit streamu
-- 💬 CZ/SK titulky
-- 🎞️ převod SRT → WebVTT
-- 🖼️ Cinemeta metadata + Sosáč fallback
-- ⚡ cache katalogů, metadat, mapování a titulků
+- 🔎 vlastní katalogy a vyhledávání
+- 🔗 propojení s IMDb / Cinemeta
+- 🇨🇿 🇸🇰 🇬🇧 dostupné jazykové varianty zvuku
+- 📺 více dostupných kvalit streamu
+- 💬 titulky ze Streamuj.tv
+- 🖼️ plakáty a metadata
+- ⚡ cache pro rychlejší opakované načítání
 
-## 🗂️ Katalogy
+## ✅ Kompatibilita
 
-- 🔥 Oblíbené
-- 🆕 Nové
-- ⭐ Nejlépe hodnocené
-- 🎙️ S dabingem
-- 💬 S titulky
-- 🔎 Hledat
+Addon je určený pro běžné Stremio klienty na **PC, Webu, Androidu / Google TV a Apple zařízeních**. Dostupné funkce se mohou lišit podle konkrétního Stremio klienta a přehrávače.
 
-## 🧩 Jak addon funguje
+## 🔒 Soukromí a přihlášení
 
-```text
-Stremio / Cinemeta / Trakt
-          │
-          │ IMDb ID
-          ▼
-      stremio.sosac
-          │
-          ├── Cinemeta → metadata
-          ├── Sosáč → katalogy a interní ID
-          └── Streamuj.tv → streamy a titulky
-                              │
-                              ├── video URL → přímo do Stremia
-                              └── titulky → server → WebVTT → Stremio
-```
+Konfigurační stránka vytvoří instalační odkaz s nastavením uloženým jako **Base64URL**. Hesla proto nejsou v odkazu běžně čitelná na první pohled.
 
-## 💬 Titulky
-
-Addon podporuje standardní Stremio `subtitles` resource i titulky připojené ke streamům.
-
-Titulky se připravují na serveru a Stremio dostane veřejnou HTTPS adresu ve tvaru:
-
-```text
-https://<server>/subtitle-file/v1/<hash>.vtt
-```
-
-## 🔒 Soukromí
-
-Konfigurační stránka ukládá nastavení do instalační URL pomocí Base64URL.
-
-**Base64 není šifrování.** Instalační URL proto nesdílej veřejně.
-
-## 🛠️ Lokální spuštění
-
-Požadavek: **Node.js 20+**
-
-```bash
-npm install
-npm start
-```
-
-Lokálně:
-
-```text
-http://localhost:7000/configure
-http://localhost:7000/health
-```
+**Base64URL není šifrování.** Instalační odkaz obsahuje citlivé přihlašovací údaje a neměl by se veřejně sdílet, posílat do logů ani zveřejňovat na screenshotech.
 
 ## 📚 Reference
 
-- Sosáč official Kodi repository
-- kodi-czsk / plugin.video.sosac.ph
-- Matt5454 / Sosio
-- CaseyCZ / stremio.sosac.subtitles
-- Stremio Addon SDK
-- Cinemeta
-- Sosáč.tv
-- Streamuj.tv
+- [Sosáč official Kodi repository](https://sosac.tv/sosacRepo/)
+- [kodi-czsk / plugin.video.sosac.ph](https://github.com/kodi-czsk/plugin.video.sosac.ph)
+- [Matt5454 / Sosio](https://github.com/Matt5454/Sosio)
+- [Stremio Addon SDK / dokumentace](https://stremio.github.io/stremio-addon-guide/)
+- [CZ Titulky pro Stremio](https://github.com/CaseyCZ/stremio.sosac.subtitles)
+- [Sosáč.tv](https://sosac.tv/)
+- [Streamuj.tv](https://www.streamuj.tv/)
 
 ## ⚠️ Upozornění
 
-Tento projekt je neoficiální komunitní addon a není oficiálně spojen se službami Stremio, Sosáč.tv, Streamuj.tv, Cinemeta ani Trakt.
+Projekt je neoficiální komunitní addon a není oficiálně spojen ani podporován službami **Stremio, Sosáč.tv, Streamuj.tv, Cinemeta ani Trakt**.
 
 Repozitář nehostuje video obsah. Dostupnost streamů, metadat a titulků závisí na externích službách.
