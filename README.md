@@ -4,15 +4,15 @@ Neoficiální komunitní doplněk pro Stremio, který propojuje katalogy a metad
 
 Addon používá IMDb ID (`tt...`) tam, kde je možné titul správně spárovat, a podporuje katalogy, metadata, streamy i titulky.
 
-## 🚀 Provoz
+## 🚀 Rychlá instalace
 
-Produkční server běží na **Oracle Cloud (Ubuntu ARM)**:
+👉 **[Otevřít konfiguraci addonu](https://130.61.49.108/configure)**
 
-```text
-Internet → Nginx → PM2 → Node.js addon :7000
-```
-
-Konfigurační stránka je dostupná na `/configure` a stav serveru na `/health`.
+1. Otevři konfigurační stránku.
+2. Vyber jazyk metadat / rozhraní.
+3. Zadej přihlašovací údaje pro **Sosáč** a **Streamuj.tv**.
+4. Klikni na **Vygenerovat instalační odkaz**.
+5. Nainstaluj addon do Stremia.
 
 ## ✨ Hlavní funkce
 
@@ -82,35 +82,6 @@ Lokálně:
 ```text
 http://localhost:7000/configure
 http://localhost:7000/health
-```
-
-## ☁️ Oracle Cloud
-
-Server používá:
-
-- Ubuntu 24.04 ARM
-- Node.js
-- PM2
-- Nginx
-- Let's Encrypt / Certbot pro HTTPS
-
-Addon běží pod PM2 jako:
-
-```text
-stremio-sosac
-```
-
-## 📁 Struktura projektu
-
-```text
-addon.js
-api/
-  sosac.js
-  streamuj.js
-  cinemeta.js
-  subtitle-files.js
-public/
-  configure.html
 ```
 
 ## 📚 Reference
