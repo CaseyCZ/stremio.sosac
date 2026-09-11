@@ -19,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.3';
+const VERSION = '0.4.4';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -61,8 +61,8 @@ function labelsFor(language) {
       moviePopular: '🔥 Sosáč – Oblíbené filmy', seriesPopular: '🔥 Sosáč – Oblíbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
       movieRated: '⭐ Sosáč – Nejlépe hodnocené filmy', seriesRated: '⭐ Sosáč – Nejlépe hodnocené seriály',
-      movieDub: '🎙️ Sosáč – S dabingem filmy', seriesDub: '🎙️ Sosáč – S dabingem seriály',
-      movieSubs: '💬 Sosáč – S titulky filmy', seriesSubs: '💬 Sosáč – S titulky seriály',
+      movieDub: '🎙️ Sosáč – S dabingem filmy', seriesDub: '🎙️ Sosáč – Nové epizody s dabingem',
+      movieSubs: '💬 Sosáč – S titulky filmy', seriesSubs: '💬 Sosáč – Nové epizody s titulky',
       movieSearch: '🔎 Sosáč – Hledat filmy', seriesSearch: '🔎 Sosáč – Hledat seriály'
     },
     sk: {
@@ -70,8 +70,8 @@ function labelsFor(language) {
       moviePopular: '🔥 Sosáč – Obľúbené filmy', seriesPopular: '🔥 Sosáč – Obľúbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
       movieRated: '⭐ Sosáč – Najlepšie hodnotené filmy', seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
-      movieDub: '🎙️ Sosáč – S dabingom filmy', seriesDub: '🎙️ Sosáč – S dabingom seriály',
-      movieSubs: '💬 Sosáč – S titulkami filmy', seriesSubs: '💬 Sosáč – S titulkami seriály',
+      movieDub: '🎙️ Sosáč – S dabingom filmy', seriesDub: '🎙️ Sosáč – Nové epizódy s dabingom',
+      movieSubs: '💬 Sosáč – S titulkami filmy', seriesSubs: '💬 Sosáč – Nové epizódy s titulkami',
       movieSearch: '🔎 Sosáč – Hľadať filmy', seriesSearch: '🔎 Sosáč – Hľadať seriály'
     },
     en: {
@@ -79,8 +79,8 @@ function labelsFor(language) {
       moviePopular: '🔥 Sosac – Popular movies', seriesPopular: '🔥 Sosac – Popular series',
       movieRecent: '🆕 Sosac – Recently added movies', seriesRecent: '🆕 Sosac – Recently added series',
       movieRated: '⭐ Sosac – Top rated movies', seriesRated: '⭐ Sosac – Top rated series',
-      movieDub: '🎙️ Sosac – Dubbed movies', seriesDub: '🎙️ Sosac – Dubbed series',
-      movieSubs: '💬 Sosac – Subtitled movies', seriesSubs: '💬 Sosac – Subtitled series',
+      movieDub: '🎙️ Sosac – Dubbed movies', seriesDub: '🎙️ Sosac – New dubbed episodes',
+      movieSubs: '💬 Sosac – Subtitled movies', seriesSubs: '💬 Sosac – New subtitled episodes',
       movieSearch: '🔎 Sosac – Search movies', seriesSearch: '🔎 Sosac – Search series'
     }
   }[lang];
@@ -431,6 +431,21 @@ function findEpisodeInDetail(detail, season, episode) {
   }
   return null;
 }
+async function loadEpisodeDetail(sosac, episode) {
+  if (!episode || episode._id === undefined || episode._id === null) return episode || null;
+  try {
+    const detail = await sosac.getEpisode(episode._id);
+    if (detail && typeof detail === 'object') return detail;
+  } catch (error) {
+    console.warn(`[resolve] Detail epizody ${episode._id} selhal: ${error.message}`);
+  }
+  return episode;
+}
+async function resolveEpisodeFromSeriesDetail(sosac, detail, season, episode) {
+  const selected = findEpisodeInDetail(detail, season, episode);
+  if (!selected) return null;
+  return loadEpisodeDetail(sosac, selected);
+}
 async function cinemetaMetaWithLocalizedOverlay(sosac, type, imdbId, language) {
   const meta = await cinemeta.getMeta(type, imdbId);
   if (!meta) return null;
@@ -461,14 +476,20 @@ async function resolveLinkId(sosac, type, id) {
       const ep = await sosac.getEpisode(id.slice('sosac_ep_'.length));
       return ep && ep.l;
     }
-    const match = id.match(/^(tt\d{5,10}):(\d+):(\d+)$/i);
-    if (match) {
-      const [, imdbId, seasonRaw, episodeRaw] = match;
+
+    const sosacMatch = id.match(/^sosac_s_([^:]+):(\d+):(\d+)$/i);
+    if (sosacMatch) {
+      const [, seriesId, seasonRaw, episodeRaw] = sosacMatch;
+      const detail = await sosac.getSeriesDetail(seriesId);
+      const ep = await resolveEpisodeFromSeriesDetail(sosac, detail, Number(seasonRaw), Number(episodeRaw));
+      return ep && ep.l;
+    }
+
+    const imdbMatch = id.match(/^(tt\d{5,10}):(\d+):(\d+)$/i);
+    if (imdbMatch) {
+      const [, imdbId, seasonRaw, episodeRaw] = imdbMatch;
       const detail = await resolveSosacForImdb(sosac, 'series', imdbId.toLowerCase());
-      let ep = findEpisodeInDetail(detail, Number(seasonRaw), Number(episodeRaw));
-      if (ep && !ep.l && ep._id !== undefined && ep._id !== null) {
-        try { ep = await sosac.getEpisode(ep._id); } catch (_) {}
-      }
+      const ep = await resolveEpisodeFromSeriesDetail(sosac, detail, Number(seasonRaw), Number(episodeRaw));
       return ep && ep.l;
     }
   }
@@ -509,8 +530,8 @@ async function handleCatalog(req, res, extraRaw) {
       }
       if (SERIES_EPISODE_MAP[id]) {
         const listType = SERIES_EPISODE_MAP[id];
-        items = await sosac.getSeries(listType, page);
-        console.log(`[catalog] ${id} → serials/lists/${listType}: ${Array.isArray(items) ? items.length : 0} položek`);
+        items = await sosac.getEpisodes(listType, page);
+        console.log(`[catalog] ${id} → episodes/lists/${listType}: ${Array.isArray(items) ? items.length : 0} položek`);
         const payload = { metas: await mapWithConcurrency(items, 8, item => resolveEpisodeCatalogItem(item, cfg)) };
         cache.set(cacheKey, payload, 900);
         return res.json(payload);
