@@ -19,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.3';
+const VERSION = '0.4.5';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -368,31 +368,13 @@ function rememberMapping(type, sosacItem, imdbId) {
 }
 async function resolveSosacCatalogItem(type, item, cfg) {
   if (!item) return null;
-  const mapKey = item._id !== undefined && item._id !== null ? `s2i:${type}:${item._id}` : null;
-  let imdbId = extractImdbId(item);
-  if (!imdbId && mapKey) imdbId = idMapCache.get(mapKey) || null;
-  let meta = imdbId ? await cinemeta.getMeta(type, imdbId) : null;
-  if (!meta) { meta = await cinemeta.resolveByTitle(type, allLocalizedTitles(item), itemYear(item)); imdbId = meta && meta.id; }
-  if (!meta || !/^tt\d{5,10}$/i.test(String(meta.id || ''))) return type === 'movie' ? movieToMeta(item, cfg.uiLanguage) : seriesToMeta(item, cfg.uiLanguage);
-  rememberMapping(type, item, meta.id);
-  return catalogMetaFromCinemeta(meta, item, cfg.uiLanguage);
+  return type === 'movie'
+    ? movieToMeta(item, cfg.uiLanguage)
+    : seriesToMeta(item, cfg.uiLanguage);
 }
 async function resolveEpisodeCatalogItem(item, cfg) {
-  const season = Number(item && item.s), episode = Number(item && item.ep), titles = episodeSeriesTitles(item);
-  if (!titles.length || !Number.isFinite(season) || !Number.isFinite(episode)) return episodeToCatalogMeta(item, cfg.uiLanguage);
-  const meta = await cinemeta.resolveByTitle('series', titles, itemYear(item));
-  if (!meta || !/^tt\d{5,10}$/i.test(String(meta.id || ''))) return episodeToCatalogMeta(item, cfg.uiLanguage);
-  const base = catalogMetaFromCinemeta(meta, null, cfg.uiLanguage);
-  if (!base) return episodeToCatalogMeta(item, cfg.uiLanguage);
-  const fallbackPoster = episodePoster(item);
-  return {
-    ...base,
-    id: String(meta.id).toLowerCase(),
-    name: episodeTitle(item, cfg.uiLanguage),
-    poster: isUsableArtwork(base.poster) ? base.poster : fallbackPoster,
-    background: isUsableArtwork(base.background) ? base.background : fallbackPoster,
-    behaviorHints: { ...(base.behaviorHints || {}), defaultVideoId: `${String(meta.id).toLowerCase()}:${season}:${episode}` }
-  };
+  if (!item) return null;
+  return episodeToCatalogMeta(item, cfg.uiLanguage);
 }
 async function resolveSosacForImdb(sosac, type, imdbId) {
   const id = String(imdbId || '').toLowerCase();
