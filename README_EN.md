@@ -12,13 +12,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERSION-v0.4.5-111827?style=flat-square&labelColor=111827&color=38BDF8" alt="Stremio Sosáč version 0.4.5" />
+  <img src="https://img.shields.io/badge/VERSION-v0.4.5-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč version 0.4.5" />
 </p>
 
 <p align="center">
-  <a href="https://130.61.49.108/configure"><img src="https://img.shields.io/badge/Addon%20Configuration-OPEN-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Open configuration" /></a>
-  <a href="https://github.com/CaseyCZ/stremio.sosac.subtitles"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-OPEN-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles" /></a>
-  <a href="https://www.buymeacoffee.com/caseycz"><img src="https://img.shields.io/badge/Support%20CaseyCZ-OPEN-38BDF8?style=for-the-badge&labelColor=0284C7&logo=buymeacoffee&logoColor=white" alt="Support CaseyCZ" /></a>
+  <a href="https://130.61.49.108/configure"><img src="https://img.shields.io/badge/Configure-Open-38BDF8?style=for-the-badge&labelColor=0284C7&logo=googlechrome&logoColor=white" alt="Open configuration" /></a>
+  <a href="https://github.com/CaseyCZ/stremio.sosac"><img src="https://img.shields.io/badge/GitHub-Repository-38BDF8?style=for-the-badge&labelColor=0284C7&logo=github&logoColor=white" alt="Stremio Sosáč GitHub" /></a>
 </p>
 
 ## About
@@ -35,25 +34,30 @@
 - ⚡ faster repeated loading
 - 📱 support for common Stremio clients on desktop, web, Android / Google TV and Apple devices
 
-## Video and subtitles are separate
+## Related project
 
-There are two separate Stremio add-ons:
-
-- **Stremio Sosáč** — catalogs, metadata and video streams
-- **Sosáč Subtitles** — a separate subtitle add-on
+Video and subtitles are maintained as two separate add-ons. For subtitles use **Sosáč Subtitles**.
 
 <p>
-  <a href="https://130.61.49.108/configure"><img src="https://img.shields.io/badge/Video%20addon-Configure-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Configure video addon" /></a>
-  <a href="https://github.com/CaseyCZ/stremio.sosac.subtitles"><img src="https://img.shields.io/badge/Subtitles-Sos%C3%A1%C4%8D%20Subtitles-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles" /></a>
+  <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Configure-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles configuration" /></a>
+  <a href="https://github.com/CaseyCZ/stremio.sosac.subtitles"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-GitHub-38BDF8?style=for-the-badge&labelColor=0284C7&logo=github&logoColor=white" alt="Sosáč Subtitles GitHub" /></a>
 </p>
 
 ## Important
 
 This is an unofficial community add-on and is not officially affiliated with or supported by Stremio, Sosáč.tv or Streamuj.tv. This repository does not host video content and source availability may change.
 
-## CaseyCZ
+## Support
 
 <p align="center">
-  <a href="https://caseycz.github.io/"><img src="https://img.shields.io/badge/CaseyCZ%20Website-OPEN-38BDF8?style=for-the-badge&labelColor=0284C7" alt="CaseyCZ Website" /></a>
   <a href="https://www.buymeacoffee.com/caseycz"><img src="https://img.shields.io/badge/Support%20CaseyCZ-Buy%20Me%20a%20Coffee-38BDF8?style=for-the-badge&labelColor=0284C7&logo=buymeacoffee&logoColor=white" alt="Support CaseyCZ" /></a>
+</p>
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/caseycz"><img src="https://caseycz.github.io/support-qr.svg" width="150" alt="Buy Me a Coffee CaseyCZ QR code" /></a><br>
+  <sub>Scan the QR code or click the button.</sub>
+</p>
+
+<p align="center">
+  <a href="https://caseycz.github.io/"><img src="https://img.shields.io/badge/CaseyCZ%20Website-Open-172033?style=flat-square&labelColor=111827" alt="CaseyCZ Website" /></a>
 </p>
