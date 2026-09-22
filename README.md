@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERZE-v0.4.5-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč verze 0.4.5" />
+  <img src="https://img.shields.io/badge/VERZE-v0.5.0-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč verze 0.5.0" />
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 ## O projektu
 
-**Stremio Sosáč** je samostatný addon pro video obsah. Přidává katalogy, vyhledávání, metadata a dostupné streamy do Stremia tak, aby byly české a slovenské zdroje dostupné přehledněji na jednom místě.
+**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video i titulky jsou předávány klientovi přímo ze Streamuj.tv; server addonu zajišťuje katalog, mapování a resolver.
 
 ## Hlavní funkce
 
@@ -30,12 +30,14 @@
 - 🖼️ metadata, plakáty a popisy titulů
 - 🇨🇿 české, slovenské a další dostupné jazykové varianty
 - 📺 výběr dostupných kvalit streamu
+- 💬 přímé titulky ze Streamuj.tv
+- ↗️ přímé přehrávání médií bez video proxy přes server addonu
 - ⚡ rychlejší opakované načítání
 - 📱 použití na běžných Stremio klientech na desktopu, webu, Androidu / Google TV a Apple zařízeních
 
 ## Související projekt
 
-Video a titulky jsou dva samostatné addony. Pro titulky použij **Sosáč Subtitles**.
+Hlavní addon od verze **0.5.0** obsahuje vlastní přímé titulky. Samostatný **Sosáč Subtitles** zůstává dostupný jako doplňkový projekt.
 
 <p>
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Konfigurace-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles konfigurace" /></a>
