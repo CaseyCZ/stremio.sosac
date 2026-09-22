@@ -20,7 +20,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.5';
+const VERSION = '0.4.6';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -595,6 +595,10 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
 });
 
 app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ streams: [] });
   const type = req.params.type;
@@ -610,6 +614,12 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
       prepareSubtitles: tracks => subtitleStore.prepareTracks(tracks, streamuj, getHost(req)),
       proxyBaseUrl: getHost(req)
     });
+
+    const proxied = streams.filter(item =>
+      typeof item?.url === 'string' && item.url.includes('/video-proxy/v1/')
+    ).length;
+    console.log(`[stream] ${type}/${id}: streams=${streams.length}, proxied=${proxied}, version=${VERSION}`);
+
     return res.json({ streams });
   } catch (error) {
     console.error('[stream]', error.message);
@@ -619,7 +629,22 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
 
 async function handleVideoProxy(req, res) {
   const entry = getStreamProxy(req.params.token);
-  if (!entry) return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
+  if (!entry) {
+    console.warn('[video-proxy] token missing/expired');
+    return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
+  }
+
+  let target;
+  try {
+    target = new URL(entry.url);
+  } catch {
+    console.warn('[video-proxy] invalid upstream URL');
+    return res.status(502).type('text/plain').send('Neplatná upstream URL.');
+  }
+
+  const isStreamujHost =
+    target.hostname === 'streamuj.tv' ||
+    target.hostname.endsWith('.streamuj.tv');
 
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)',
@@ -627,9 +652,13 @@ async function handleVideoProxy(req, res) {
     Referer: `https://${entry.provider}/`
   };
 
-  if (entry.cookie) headers.Cookie = entry.cookie;
+  if (isStreamujHost && entry.cookie) headers.Cookie = entry.cookie;
   if (req.headers.range) headers.Range = req.headers.range;
   if (req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
+
+  console.log(
+    `[video-proxy] ${req.method} host=${target.hostname} range=${req.headers.range || '-'}`
+  );
 
   try {
     const isHead = req.method === 'HEAD';
@@ -644,6 +673,10 @@ async function handleVideoProxy(req, res) {
       headers,
       validateStatus: status => status >= 200 && status < 500
     });
+
+    console.log(
+      `[video-proxy] upstream status=${upstream.status} type=${upstream.headers['content-type'] || '-'} length=${upstream.headers['content-length'] || '-'}`
+    );
 
     res.status(upstream.status);
 
@@ -676,7 +709,8 @@ async function handleVideoProxy(req, res) {
 
     upstream.data.pipe(res);
   } catch (error) {
-    console.error('[video-proxy]', error.message);
+    const code = error?.code || error?.response?.status || '-';
+    console.error(`[video-proxy] failed code=${code}: ${error.message}`);
     if (!res.headersSent) return res.status(502).type('text/plain').send('Upstream stream není dostupný.');
     res.destroy(error);
   }

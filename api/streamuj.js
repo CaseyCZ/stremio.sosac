@@ -28,7 +28,7 @@ const videoLinksCache = new NodeCache({ stdTTL: 60, checkperiod: 30, maxKeys: 12
 const indirectUrlCache = new NodeCache({ stdTTL: 45, checkperiod: 30, maxKeys: 2400, useClones: false });
 const pendingVideoLinks = new Map();
 const pendingIndirectUrls = new Map();
-const streamProxyCache = new NodeCache({ stdTTL: 8 * 60 * 60, checkperiod: 5 * 60, maxKeys: 5000, useClones: false });
+const streamProxyCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 5 * 60, maxKeys: 5000, useClones: false });
 
 function registerStreamProxy(url, options = {}) {
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
