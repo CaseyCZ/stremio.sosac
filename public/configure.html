@@ -38,10 +38,11 @@
     <section class="card">
       <div class="badges">
         <span class="badge">🎬 Hlavní addon</span>
-        <span class="badge">📦 Verze 0.4.5</span>
+        <span class="badge">📦 Verze 0.5.0</span>
+        <span class="badge">↗️ Direct media</span>
       </div>
       <h1>Sosáč + Streamuj.tv</h1>
-      <p class="lead">Nastav přihlášení a vygeneruj instalační odkaz pro Stremio.</p>
+      <p class="lead">Nastav přihlášení a vygeneruj instalační odkaz pro Stremio. Video i titulky jdou přímo ze Streamuj.</p>
 
       <div class="field">
         <label for="uiLanguage">Jazyk metadat</label>
@@ -49,6 +50,14 @@
           <option value="cs">Čeština</option>
           <option value="sk">Slovenština</option>
           <option value="en">English</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="location">Streamuj lokalita serverů</label>
+        <select id="location">
+          <option value="1">CZ (1) – výchozí</option>
+          <option value="2">PL (2)</option>
         </select>
       </div>
 
@@ -132,7 +141,8 @@ document.getElementById('generate').addEventListener('click',()=>{
     sosacUser:document.getElementById('sosacUser').value.trim(),
     sosacPass:document.getElementById('sosacPass').value,
     streamujUser:document.getElementById('streamujUser').value.trim(),
-    streamujPass:document.getElementById('streamujPass').value
+    streamujPass:document.getElementById('streamujPass').value,
+    location:document.getElementById('location').value
   };
   const status=document.getElementById('status');
   if(!cfg.sosacUser||!cfg.sosacPass||!cfg.streamujUser||!cfg.streamujPass){
@@ -141,7 +151,8 @@ document.getElementById('generate').addEventListener('click',()=>{
     return;
   }
   const encoded=toBase64Url(cfg);
-  const path=`/${encoded}/manifest.json`;
+  const basePath=location.pathname.replace(/\/configure\/?$/,'').replace(/\/$/,'');
+  const path=`${basePath}/${encoded}/manifest.json`;
   const manifest=`${location.origin}${path}`;
   const install=`stremio://${location.host}${path}`;
   document.getElementById('installUrl').value=manifest;
