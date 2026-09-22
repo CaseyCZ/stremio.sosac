@@ -399,7 +399,8 @@ class StreamujApi {
 
     result.sort((a, b) => a._sort.lang - b._sort.lang || a._sort.quality - b._sort.quality);
     return result.map(({ _sort, ...stream }) => stream);
-  }}
+  }
+}
 
 module.exports = {
   StreamujApi,
