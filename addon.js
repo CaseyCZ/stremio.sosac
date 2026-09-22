@@ -19,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.5';
+const VERSION = '0.4.6';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -594,6 +594,10 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
 });
 
 app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
+  // Streamuj media URLs are short-lived. Never let Stremio/CDNs reuse an old stream response.
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ streams: [] });
   const type = req.params.type;
