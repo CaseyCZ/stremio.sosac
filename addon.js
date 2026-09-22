@@ -57,7 +57,7 @@ function labelsFor(language) {
   const lang = ['cs', 'sk', 'en'].includes(language) ? language : 'cs';
   return {
     cs: {
-      name: 'Sosáč CZ/SK TEST',
+      name: 'Sosáč CZ/SK',
       moviePopular: '🔥 Sosáč – Oblíbené filmy', seriesPopular: '🔥 Sosáč – Oblíbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
       movieRated: '⭐ Sosáč – Nejlépe hodnocené filmy', seriesRated: '⭐ Sosáč – Nejlépe hodnocené seriály',
@@ -66,7 +66,7 @@ function labelsFor(language) {
       movieSearch: '🔎 Sosáč – Hledat filmy', seriesSearch: '🔎 Sosáč – Hledat seriály'
     },
     sk: {
-      name: 'Sosáč CZ/SK TEST',
+      name: 'Sosáč CZ/SK',
       moviePopular: '🔥 Sosáč – Obľúbené filmy', seriesPopular: '🔥 Sosáč – Obľúbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
       movieRated: '⭐ Sosáč – Najlepšie hodnotené filmy', seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
@@ -75,7 +75,7 @@ function labelsFor(language) {
       movieSearch: '🔎 Sosáč – Hľadať filmy', seriesSearch: '🔎 Sosáč – Hľadať seriály'
     },
     en: {
-      name: 'Sosac CZ/SK TEST',
+      name: 'Sosac CZ/SK',
       moviePopular: '🔥 Sosac – Popular movies', seriesPopular: '🔥 Sosac – Popular series',
       movieRecent: '🆕 Sosac – Recently added movies', seriesRecent: '🆕 Sosac – Recently added series',
       movieRated: '⭐ Sosac – Top rated movies', seriesRated: '⭐ Sosac – Top rated series',
