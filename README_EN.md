@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERSION-v0.4.5-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč version 0.4.5" />
+  <img src="https://img.shields.io/badge/VERSION-v0.5.0-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč version 0.5.0" />
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 ## About
 
-**Stremio Sosáč** is the separate video add-on. It brings catalogs, search, metadata and available streams into Stremio so Czech and Slovak sources are easier to access in one place.
+**Stremio Sosáč** brings catalogs, search, metadata, streams and available subtitles into Stremio. Video and subtitles are handed directly to the client from Streamuj.tv; the add-on server handles catalogs, mapping and resolving.
 
 ## Main features
 
@@ -30,12 +30,14 @@
 - 🖼️ metadata, posters and title descriptions
 - 🇨🇿 Czech, Slovak and other available language variants
 - 📺 selectable stream qualities
+- 💬 direct subtitles from Streamuj.tv
+- ↗️ direct media playback without routing video through the add-on server
 - ⚡ faster repeated loading
 - 📱 support for common Stremio clients on desktop, web, Android / Google TV and Apple devices
 
 ## Related project
 
-Video and subtitles are maintained as two separate add-ons. For subtitles use **Sosáč Subtitles**.
+Starting with **0.5.0**, the main add-on includes its own direct subtitle support. The separate **Sosáč Subtitles** project remains available as an optional companion.
 
 <p>
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Configure-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles configuration" /></a>
