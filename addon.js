@@ -9,7 +9,6 @@ const {
   getLocalizedDescription
 } = require('./api/sosac');
 const { StreamujApi } = require('./api/streamuj');
-const { SubtitleFileStore } = require('./api/subtitle-files');
 const {
   CinemetaApi,
   titleScore,
@@ -19,13 +18,12 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.7';
+const VERSION = '0.5.0';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
 const subtitleLookupCache = new NodeCache({ stdTTL: 120, checkperiod: 60 });
 const cinemeta = new CinemetaApi();
-const subtitleStore = new SubtitleFileStore();
 
 app.disable('etag');
 app.use(express.static(path.join(__dirname, 'public')));
@@ -50,14 +48,16 @@ function decodeConfig(value) {
 function getHost(req) {
   const proto = String(req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http')).split(',')[0].trim();
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`).split(',')[0].trim();
-  return `${proto}://${host}`;
+  const prefixRaw = String(req.headers['x-forwarded-prefix'] || '').split(',')[0].trim();
+  const prefix = prefixRaw && prefixRaw !== '/' ? `/${prefixRaw.replace(/^\/+|\/+$/g, '')}` : '';
+  return `${proto}://${host}${prefix}`;
 }
 
 function labelsFor(language) {
   const lang = ['cs', 'sk', 'en'].includes(language) ? language : 'cs';
   return {
     cs: {
-      name: 'Sosáč CZ/SK',
+      name: 'Sosáč CZ/SK TEST',
       moviePopular: '🔥 Sosáč – Oblíbené filmy', seriesPopular: '🔥 Sosáč – Oblíbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
       movieRated: '⭐ Sosáč – Nejlépe hodnocené filmy', seriesRated: '⭐ Sosáč – Nejlépe hodnocené seriály',
@@ -66,7 +66,7 @@ function labelsFor(language) {
       movieSearch: '🔎 Sosáč – Hledat filmy', seriesSearch: '🔎 Sosáč – Hledat seriály'
     },
     sk: {
-      name: 'Sosáč CZ/SK',
+      name: 'Sosáč CZ/SK TEST',
       moviePopular: '🔥 Sosáč – Obľúbené filmy', seriesPopular: '🔥 Sosáč – Obľúbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
       movieRated: '⭐ Sosáč – Najlepšie hodnotené filmy', seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
@@ -75,7 +75,7 @@ function labelsFor(language) {
       movieSearch: '🔎 Sosáč – Hľadať filmy', seriesSearch: '🔎 Sosáč – Hľadať seriály'
     },
     en: {
-      name: 'Sosac CZ/SK',
+      name: 'Sosac CZ/SK TEST',
       moviePopular: '🔥 Sosac – Popular movies', seriesPopular: '🔥 Sosac – Popular series',
       movieRecent: '🆕 Sosac – Recently added movies', seriesRecent: '🆕 Sosac – Recently added series',
       movieRated: '⭐ Sosac – Top rated movies', seriesRated: '⭐ Sosac – Top rated series',
@@ -91,10 +91,10 @@ function buildManifest(cfg, host) {
   const searchExtra = [{ name: 'search', isRequired: true }];
   const pageExtra = [{ name: 'skip', isRequired: false }];
   return {
-    id: 'cz.caseycz.stremio.sosac',
+    id: 'cz.caseycz.stremio.sosac.test.direct',
     version: VERSION,
     name: labels.name,
-    description: 'Cinemeta metadata + Sosáč/Streamuj CZ/SK streamy a titulky.',
+    description: 'Cinemeta metadata + Sosáč/Streamuj CZ/SK streamy a přímé titulky (d=19).',
     logo: `${host}/logo.png`,
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'sosac_m_', 'sosac_s_', 'sosac_ep_'],
@@ -533,10 +533,16 @@ async function handleSubtitles(req, res) {
     }
 
     const tracks = await streamuj.getSubtitleTracks(linkId);
-    const prepared = await subtitleStore.prepareTracks(tracks, streamuj, getHost(req));
-    if (prepared.length) subtitleLookupCache.set(lookupKey, prepared, 120);
-    console.log(`[subtitle] ${type}/${id}: vracím ${prepared.length} stop`);
-    return res.json({ subtitles: prepared });
+    const direct = tracks
+      .map((track, index) => ({
+        id: `sosac-direct-${track.lang || 'und'}-${index + 1}`,
+        url: track.directUrl || track.sourceUrl,
+        lang: track.lang || 'und'
+      }))
+      .filter(track => /^https:\/\//i.test(String(track.url || '')));
+    if (direct.length) subtitleLookupCache.set(lookupKey, direct, 120);
+    console.log(`[subtitle-direct] ${type}/${id}: vracím ${direct.length} přímých stop`);
+    return res.json({ subtitles: direct });
   } catch (error) {
     console.error('[subtitle]', error.message);
     return res.json({ subtitles: [] });
@@ -620,17 +626,6 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
 
-app.get('/subtitle-file/v1/:hash.vtt', async (req, res) => {
-  try { return await subtitleStore.sendFile(req, res, req.params.hash); }
-  catch (error) {
-    console.error('[subtitle-file]', error.message);
-    return res.status(500).type('text/plain').send('Chyba při čtení titulků.');
-  }
-});
-app.head('/subtitle-file/v1/:hash.vtt', async (req, res) => {
-  try { return await subtitleStore.sendFile(req, res, req.params.hash); }
-  catch (error) { return res.status(500).end(); }
-});
 
 app.get('/health', (req, res) => res.json({
   ok: true,
@@ -638,7 +633,9 @@ app.get('/health', (req, res) => res.json({
   cacheKeys: cache.keys().length,
   idMappings: idMapCache.keys().length,
   subtitleLookups: subtitleLookupCache.keys().length,
-  debugStreamujRaw: DEBUG_STREAMUJ_RAW
+  debugStreamujRaw: DEBUG_STREAMUJ_RAW,
+  mediaProxy: false,
+  directSubtitles: true
 }));
 
 app.listen(PORT, '0.0.0.0', () => {
