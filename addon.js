@@ -8,7 +8,8 @@ const {
   getLocalizedTitle,
   getLocalizedDescription
 } = require('./api/sosac');
-const { StreamujApi } = require('./api/streamuj');
+const axios = require('axios');
+const { StreamujApi, getStreamProxy } = require('./api/streamuj');
 const { SubtitleFileStore } = require('./api/subtitle-files');
 const {
   CinemetaApi,
@@ -606,7 +607,8 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     if (!linkId) return res.json({ streams: [] });
 
     const streams = await streamuj.getStreams(linkId, {
-      prepareSubtitles: tracks => subtitleStore.prepareTracks(tracks, streamuj, getHost(req))
+      prepareSubtitles: tracks => subtitleStore.prepareTracks(tracks, streamuj, getHost(req)),
+      proxyBaseUrl: getHost(req)
     });
     return res.json({ streams });
   } catch (error) {
@@ -614,6 +616,74 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     return res.json({ streams: [] });
   }
 });
+
+async function handleVideoProxy(req, res) {
+  const entry = getStreamProxy(req.params.token);
+  if (!entry) return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
+
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)',
+    Accept: '*/*',
+    Referer: `https://${entry.provider}/`
+  };
+
+  if (entry.cookie) headers.Cookie = entry.cookie;
+  if (req.headers.range) headers.Range = req.headers.range;
+  if (req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
+
+  try {
+    const isHead = req.method === 'HEAD';
+    const upstream = await axios({
+      method: isHead ? 'head' : 'get',
+      url: entry.url,
+      responseType: isHead ? 'arraybuffer' : 'stream',
+      timeout: 30000,
+      maxRedirects: 5,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      headers,
+      validateStatus: status => status >= 200 && status < 500
+    });
+
+    res.status(upstream.status);
+
+    for (const name of [
+      'content-type',
+      'content-length',
+      'content-range',
+      'accept-ranges',
+      'cache-control',
+      'etag',
+      'last-modified'
+    ]) {
+      const value = upstream.headers[name];
+      if (value !== undefined) res.setHeader(name, value);
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    if (isHead) return res.end();
+
+    upstream.data.on('error', error => {
+      console.warn('[video-proxy] upstream stream error:', error.message);
+      if (!res.headersSent) res.status(502).end();
+      else res.destroy(error);
+    });
+
+    req.on('close', () => {
+      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
+    });
+
+    upstream.data.pipe(res);
+  } catch (error) {
+    console.error('[video-proxy]', error.message);
+    if (!res.headersSent) return res.status(502).type('text/plain').send('Upstream stream není dostupný.');
+    res.destroy(error);
+  }
+}
+
+app.get('/video-proxy/v1/:token', handleVideoProxy);
+app.head('/video-proxy/v1/:token', handleVideoProxy);
 
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
