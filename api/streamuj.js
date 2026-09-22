@@ -356,17 +356,14 @@ class StreamujApi {
     return pending;
   }
 
-  async getStreams(linkId, options = {}) {
+  async getStreams(linkId) {
     const data = await this.getVideoLinks(linkId, 18);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
 
-    const prepareSubtitles = typeof options.prepareSubtitles === 'function' ? options.prepareSubtitles : null;
-    let rawSubtitles = collectSubtitleTracksFromData(data, this.provider);
-    if (!rawSubtitles.length && prepareSubtitles) rawSubtitles = await this.getSubtitleTracks(linkId);
-
-    const preparedPromise = prepareSubtitles
-      ? prepareSubtitles(rawSubtitles)
-      : Promise.resolve(rawSubtitles.map(sub => ({ id: sub.id, lang: sub.lang, url: sub.directUrl })));
+    // Only inspect subtitle metadata already present in the player response so
+    // the stream description can mention it. Actual subtitle files are served
+    // exclusively by the /subtitles resource and must never delay video startup.
+    const rawSubtitles = collectSubtitleTracksFromData(data, this.provider);
 
     const jobs = [];
     for (const [rawLang, langData] of Object.entries(data.URL)) {
@@ -380,21 +377,14 @@ class StreamujApi {
         jobs.push((async () => {
           const finalUrl = await this.resolveIndirectUrl(indirectUrl);
           if (!finalUrl) return null;
-          return {
-            lang,
-            quality,
-            finalUrl
-          };
+          return { lang, quality, finalUrl };
         })());
       }
     }
 
-    const [preparedSubtitles, resolved] = await Promise.all([
-      preparedPromise,
-      Promise.all(jobs)
-    ]);
-
+    const resolved = await Promise.all(jobs);
     const result = [];
+
     for (const item of resolved) {
       if (!item) continue;
       const stream = { lang: item.lang, quality: item.quality, url: item.finalUrl, subtitles: rawSubtitles };
@@ -402,7 +392,6 @@ class StreamujApi {
         url: item.finalUrl,
         name: `Sosáč • ${QUALITY_LABELS[item.quality] || item.quality}`,
         description: buildDescription(stream),
-        subtitles: preparedSubtitles,
         behaviorHints: { notWebReady: true, bingeGroup: `sosac-${item.lang.toLowerCase()}-${item.quality.toLowerCase()}` },
         _sort: { lang: langIndex(item.lang), quality: qualityIndex(item.quality) }
       });
@@ -410,8 +399,7 @@ class StreamujApi {
 
     result.sort((a, b) => a._sort.lang - b._sort.lang || a._sort.quality - b._sort.quality);
     return result.map(({ _sort, ...stream }) => stream);
-  }
-}
+  }}
 
 module.exports = {
   StreamujApi,

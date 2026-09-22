@@ -19,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.6';
+const VERSION = '0.4.7';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -609,9 +609,7 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     const linkId = await resolveLinkId(sosac, type, id);
     if (!linkId) return res.json({ streams: [] });
 
-    const streams = await streamuj.getStreams(linkId, {
-      prepareSubtitles: tracks => subtitleStore.prepareTracks(tracks, streamuj, getHost(req))
-    });
+    const streams = await streamuj.getStreams(linkId);
     return res.json({ streams });
   } catch (error) {
     console.error('[stream]', error.message);
