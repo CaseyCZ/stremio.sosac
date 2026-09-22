@@ -670,7 +670,7 @@ async function handleVideoProxy(req, res) {
       else res.destroy(error);
     });
 
-    req.on('close', () => {
+    res.on('close', () => {
       if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
     });
 
