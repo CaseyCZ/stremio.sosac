@@ -403,7 +403,7 @@ class StreamujApi {
         name: `Sosáč • ${QUALITY_LABELS[item.quality] || item.quality}`,
         description: buildDescription(stream),
         subtitles: preparedSubtitles,
-        behaviorHints: { notWebReady: true, bingeGroup: `sosac-${item.lang.toLowerCase()}-${item.quality.toLowerCase()}` },
+        behaviorHints: { bingeGroup: `sosac-${item.lang.toLowerCase()}-${item.quality.toLowerCase()}` },
         _sort: { lang: langIndex(item.lang), quality: qualityIndex(item.quality) }
       });
     }
