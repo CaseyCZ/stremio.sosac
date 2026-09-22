@@ -8,8 +8,7 @@ const {
   getLocalizedTitle,
   getLocalizedDescription
 } = require('./api/sosac');
-const axios = require('axios');
-const { StreamujApi, getStreamProxy } = require('./api/streamuj');
+const { StreamujApi } = require('./api/streamuj');
 const { SubtitleFileStore } = require('./api/subtitle-files');
 const {
   CinemetaApi,
@@ -20,7 +19,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.4.6';
+const VERSION = '0.4.7';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
@@ -595,10 +594,6 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
 });
 
 app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ streams: [] });
   const type = req.params.type;
@@ -611,113 +606,14 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     if (!linkId) return res.json({ streams: [] });
 
     const streams = await streamuj.getStreams(linkId, {
-      prepareSubtitles: tracks => subtitleStore.prepareTracks(tracks, streamuj, getHost(req)),
-      proxyBaseUrl: getHost(req)
+      prepareSubtitles: tracks => subtitleStore.prepareTracks(tracks, streamuj, getHost(req))
     });
-
-    const proxied = streams.filter(item =>
-      typeof item?.url === 'string' && item.url.includes('/video-proxy/v1/')
-    ).length;
-    console.log(`[stream] ${type}/${id}: streams=${streams.length}, proxied=${proxied}, version=${VERSION}`);
-
     return res.json({ streams });
   } catch (error) {
     console.error('[stream]', error.message);
     return res.json({ streams: [] });
   }
 });
-
-async function handleVideoProxy(req, res) {
-  const entry = getStreamProxy(req.params.token);
-  if (!entry) {
-    console.warn('[video-proxy] token missing/expired');
-    return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
-  }
-
-  let target;
-  try {
-    target = new URL(entry.url);
-  } catch {
-    console.warn('[video-proxy] invalid upstream URL');
-    return res.status(502).type('text/plain').send('Neplatná upstream URL.');
-  }
-
-  const isStreamujHost =
-    target.hostname === 'streamuj.tv' ||
-    target.hostname.endsWith('.streamuj.tv');
-
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)',
-    Accept: '*/*',
-    Referer: `https://${entry.provider}/`
-  };
-
-  if (isStreamujHost && entry.cookie) headers.Cookie = entry.cookie;
-  if (req.headers.range) headers.Range = req.headers.range;
-  if (req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
-
-  console.log(
-    `[video-proxy] ${req.method} host=${target.hostname} range=${req.headers.range || '-'}`
-  );
-
-  try {
-    const isHead = req.method === 'HEAD';
-    const upstream = await axios({
-      method: isHead ? 'head' : 'get',
-      url: entry.url,
-      responseType: isHead ? 'arraybuffer' : 'stream',
-      timeout: 30000,
-      maxRedirects: 5,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      headers,
-      validateStatus: status => status >= 200 && status < 500
-    });
-
-    console.log(
-      `[video-proxy] upstream status=${upstream.status} type=${upstream.headers['content-type'] || '-'} length=${upstream.headers['content-length'] || '-'}`
-    );
-
-    res.status(upstream.status);
-
-    for (const name of [
-      'content-type',
-      'content-length',
-      'content-range',
-      'accept-ranges',
-      'cache-control',
-      'etag',
-      'last-modified'
-    ]) {
-      const value = upstream.headers[name];
-      if (value !== undefined) res.setHeader(name, value);
-    }
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    if (isHead) return res.end();
-
-    upstream.data.on('error', error => {
-      console.warn('[video-proxy] upstream stream error:', error.message);
-      if (!res.headersSent) res.status(502).end();
-      else res.destroy(error);
-    });
-
-    res.on('close', () => {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-    });
-
-    upstream.data.pipe(res);
-  } catch (error) {
-    const code = error?.code || error?.response?.status || '-';
-    console.error(`[video-proxy] failed code=${code}: ${error.message}`);
-    if (!res.headersSent) return res.status(502).type('text/plain').send('Upstream stream není dostupný.');
-    res.destroy(error);
-  }
-}
-
-app.get('/video-proxy/v1/:token', handleVideoProxy);
-app.head('/video-proxy/v1/:token', handleVideoProxy);
 
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
