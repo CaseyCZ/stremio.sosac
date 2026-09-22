@@ -179,7 +179,7 @@ class StreamujApi {
     this.http = axios.create({
       timeout: 20000,
       maxContentLength: 2 * 1024 * 1024,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)', Accept: 'application/json, text/plain, */*' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36', Accept: 'application/json, text/plain, */*' }
     });
   }
   isConfigured() { return Boolean(this.username && this.hasPassword && this.passwordHash); }
@@ -198,7 +198,7 @@ class StreamujApi {
     ]);
   }
 
-  async getVideoLinks(linkId, device = 18) {
+  async getVideoLinks(linkId, device = 19) {
     if (!this.isConfigured() || !linkId) return null;
 
     const key = this.videoLinksCacheKey(linkId, device);
@@ -278,36 +278,18 @@ class StreamujApi {
   }
 
   async getSubtitleTracks(linkId) {
-    const tracks = [];
-    const seen = new Set();
-
-    // d=19 je ověřená titulková cesta. d=18 ponecháváme kvůli úplnosti,
-    // ale díky sdílené 60s cache se při současném stream requestu znovu nestahuje.
-    for (const device of [19, 18]) {
-      try {
-        const data = await this.getVideoLinks(linkId, device);
-        for (const sub of collectSubtitleTracksFromData(data, this.provider)) {
-          const key = `${sub.lang}:${sub.sourceUrl}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          tracks.push(sub);
-        }
-      } catch (error) {
-        console.warn(`[subtitle] Player API d=${device} link=${linkId} selhalo: ${error.message}`);
-      }
+    // Match the current official Sosáč 3.1.0 path: subtitles come from
+    // the same Streamuj player response as video (d=19). Return source
+    // URLs untouched so Stremio fetches subtitle bytes directly.
+    try {
+      const data = await this.getVideoLinks(linkId, 19);
+      const tracks = collectSubtitleTracksFromData(data, this.provider);
+      console.log(`[subtitle-direct] link=${linkId} d=19 tracks=${tracks.length}`);
+      return tracks;
+    } catch (error) {
+      console.warn(`[subtitle-direct] Player API d=19 link=${linkId} selhalo: ${error.message}`);
+      return [];
     }
-    if (!tracks.length) {
-      for (const sub of await this.getSubtitleTracksFromHtml(linkId)) {
-        const key = `${sub.lang}:${sub.sourceUrl}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        tracks.push(sub);
-      }
-    }
-    const priority = { cze: 0, slk: 1, eng: 2 };
-    tracks.sort((a, b) => (priority[a.lang] ?? 3) - (priority[b.lang] ?? 3));
-    console.log(`[subtitle] link=${linkId} celkem=${tracks.length}`);
-    return tracks.slice(0, 12);
   }
 
   async downloadSubtitleVtt(sourceUrl) {
@@ -357,7 +339,7 @@ class StreamujApi {
   }
 
   async getStreams(linkId) {
-    const data = await this.getVideoLinks(linkId, 18);
+    const data = await this.getVideoLinks(linkId, 19);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
 
     // Only inspect subtitle metadata already present in the player response so
