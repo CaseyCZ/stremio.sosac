@@ -28,6 +28,24 @@ const videoLinksCache = new NodeCache({ stdTTL: 60, checkperiod: 30, maxKeys: 12
 const indirectUrlCache = new NodeCache({ stdTTL: 45, checkperiod: 30, maxKeys: 2400, useClones: false });
 const pendingVideoLinks = new Map();
 const pendingIndirectUrls = new Map();
+const streamProxyCache = new NodeCache({ stdTTL: 8 * 60 * 60, checkperiod: 5 * 60, maxKeys: 5000, useClones: false });
+
+function registerStreamProxy(url, options = {}) {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
+  const token = crypto.randomBytes(24).toString('hex');
+  streamProxyCache.set(token, {
+    url,
+    provider: String(options.provider || 'www.streamuj.tv'),
+    cookie: String(options.cookie || ''),
+    createdAt: Date.now()
+  });
+  return token;
+}
+
+function getStreamProxy(token) {
+  if (!/^[a-f0-9]{48}$/i.test(String(token || ''))) return null;
+  return streamProxyCache.get(String(token)) || null;
+}
 
 function md5(value) {
   return crypto.createHash('md5').update(String(value || '')).digest('hex');
@@ -395,11 +413,25 @@ class StreamujApi {
     ]);
 
     const result = [];
+    const proxyBaseUrl = typeof options.proxyBaseUrl === 'string'
+      ? options.proxyBaseUrl.replace(/\/+$/, '')
+      : '';
+
     for (const item of resolved) {
       if (!item) continue;
-      const stream = { lang: item.lang, quality: item.quality, url: item.finalUrl, subtitles: rawSubtitles };
+
+      let playbackUrl = item.finalUrl;
+      if (proxyBaseUrl) {
+        const token = registerStreamProxy(item.finalUrl, {
+          provider: this.provider,
+          cookie: this.authCookie()
+        });
+        if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v1/${token}`;
+      }
+
+      const stream = { lang: item.lang, quality: item.quality, url: playbackUrl, subtitles: rawSubtitles };
       result.push({
-        url: item.finalUrl,
+        url: playbackUrl,
         name: `Sosáč • ${QUALITY_LABELS[item.quality] || item.quality}`,
         description: buildDescription(stream),
         subtitles: preparedSubtitles,
@@ -421,5 +453,6 @@ module.exports = {
   collectSubtitles,
   collectSubtitleTracksFromData,
   convertSrtToVtt,
-  normalizeSubtitleSourceUrl
+  normalizeSubtitleSourceUrl,
+  getStreamProxy
 };
