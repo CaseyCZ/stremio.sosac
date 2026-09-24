@@ -632,22 +632,22 @@ async function handleSubtitles(req, res) {
       )).filter(Boolean);
     }
 
-    if (subtitles.length) subtitleLookupCache.set(lookupKey, subtitles, 120);
+    const publicSubtitles = subtitles.map(({ id: subtitleId, url, lang }) => ({
+      id: subtitleId,
+      url,
+      lang
+    }));
 
-    console.log(`[subtitle-${mode}] ${type}/${id}: vracím ${subtitles.length} stop ${JSON.stringify(
+    if (publicSubtitles.length) subtitleLookupCache.set(lookupKey, publicSubtitles, 120);
+
+    console.log(`[subtitle-${mode}] ${type}/${id}: vracím ${publicSubtitles.length} stop ${JSON.stringify(
       subtitles.map(track => ({
         lang: track.lang,
         delivery: track.delivery || mode
       }))
     )}`);
 
-    return res.json({
-      subtitles: subtitles.map(({ id: subtitleId, url, lang }) => ({
-        id: subtitleId,
-        url,
-        lang
-      }))
-    });
+    return res.json({ subtitles: publicSubtitles });
   } catch (error) {
     console.error('[subtitle]', error.message);
     return res.json({ subtitles: [] });
