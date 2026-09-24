@@ -292,7 +292,7 @@ class StreamujApi {
     }
   }
 
-  async downloadSubtitleVtt(sourceUrl) {
+  async downloadSubtitleFile(sourceUrl) {
     const normalized = normalizeSubtitleSourceUrl(sourceUrl, this.provider);
     if (!normalized) throw new Error('Neplatná nebo nepovolená URL titulků.');
     const response = await this.http.get(normalized, {
@@ -304,9 +304,36 @@ class StreamujApi {
         Cookie: this.authCookie()
       }
     });
+
     const body = typeof response.data === 'string' ? response.data : String(response.data || '');
-    if (!body || /^\s*</.test(body)) throw new Error('Streamuj nevrátil platná textová data titulků.');
-    return Buffer.from(convertSrtToVtt(body), 'utf8');
+    if (!body || /^\s*</.test(body)) {
+      throw new Error('Streamuj nevrátil platná textová data titulků.');
+    }
+
+    const clean = body.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+    const trimmed = clean.trimStart();
+    let ext = null;
+
+    if (/^WEBVTT(?:[ \t\n]|$)/i.test(trimmed)) {
+      ext = 'vtt';
+    } else if (/(?:^|\n)(?:\d+\s*\n)?(?:\d{1,3}:)?[0-5]\d:[0-5]\d[,.]\d{3}\s*-->\s*(?:\d{1,3}:)?[0-5]\d:[0-5]\d[,.]\d{3}/.test(trimmed)) {
+      ext = 'srt';
+    }
+
+    if (!ext) throw new Error('Nepodařilo se rozpoznat formát titulků.');
+
+    const buffer = Buffer.from(clean, 'utf8');
+    if (!buffer.length || buffer.length > 2 * 1024 * 1024) {
+      throw new Error('Neplatná velikost titulků.');
+    }
+
+    return { body: buffer, ext };
+  }
+
+  async downloadSubtitleVtt(sourceUrl) {
+    const file = await this.downloadSubtitleFile(sourceUrl);
+    if (file.ext === 'vtt') return file.body;
+    return Buffer.from(convertSrtToVtt(file.body.toString('utf8')), 'utf8');
   }
 
   async resolveIndirectUrl(url) {
