@@ -1,5 +1,8 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
 const NodeCache = require('node-cache');
 const {
   SosacApi,
@@ -18,11 +21,13 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 7000;
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const DEBUG_STREAMUJ_RAW = process.env.DEBUG_STREAMUJ_RAW === '1';
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 });
 const subtitleLookupCache = new NodeCache({ stdTTL: 120, checkperiod: 60 });
+const SUBTITLE_CACHE_DIR = process.env.SUBTITLE_CACHE_DIR || path.join(os.tmpdir(), 'stremio-sosac-subtitles');
+const SUBTITLE_FILE_MAX_BYTES = 2 * 1024 * 1024;
 const cinemeta = new CinemetaApi();
 
 app.disable('etag');
@@ -43,6 +48,10 @@ function decodeConfig(value) {
   } catch {
     return null;
   }
+}
+
+function getSubtitleMode(cfg) {
+  return cfg && cfg.subtitleMode === 'direct-test' ? 'direct-test' : 'hybrid';
 }
 
 function getHost(req) {
@@ -90,11 +99,16 @@ function buildManifest(cfg, host) {
   const labels = labelsFor(cfg.uiLanguage);
   const searchExtra = [{ name: 'search', isRequired: true }];
   const pageExtra = [{ name: 'skip', isRequired: false }];
+  const directTest = getSubtitleMode(cfg) === 'direct-test';
   return {
-    id: 'cz.caseycz.stremio.sosac.test.direct',
+    id: directTest
+      ? 'cz.caseycz.stremio.sosac.test.direct.directtest'
+      : 'cz.caseycz.stremio.sosac.test.direct',
     version: VERSION,
-    name: labels.name,
-    description: 'Cinemeta metadata + Sosáč/Streamuj CZ/SK streamy a přímé titulky (d=19).',
+    name: directTest ? `${labels.name} [DIRECT TEST]` : labels.name,
+    description: directTest
+      ? 'Cinemeta metadata + Sosáč/Streamuj CZ/SK streamy a přímé Streamuj titulky (test).'
+      : 'Cinemeta metadata + Sosáč/Streamuj CZ/SK streamy a kompatibilní titulky přes soubor s příponou.',
     logo: `${host}/logo.png`,
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'sosac_m_', 'sosac_s_', 'sosac_ep_'],
@@ -510,6 +524,68 @@ async function handleCatalog(req, res, extraRaw) {
   }
 }
 
+function subtitleProxyFilePath(hash, ext) {
+  return path.join(SUBTITLE_CACHE_DIR, `${hash}.${ext}`);
+}
+
+async function storeSubtitleProxyFile(body, ext) {
+  if (!Buffer.isBuffer(body) || !body.length || body.length > SUBTITLE_FILE_MAX_BYTES) {
+    throw new Error('Neplatná velikost souboru titulků.');
+  }
+  if (!['srt', 'vtt'].includes(ext)) throw new Error('Nepodporovaný formát titulků.');
+
+  const hash = crypto.createHash('sha256').update(body).digest('hex');
+  const target = subtitleProxyFilePath(hash, ext);
+  await fs.promises.mkdir(SUBTITLE_CACHE_DIR, { recursive: true });
+
+  try {
+    await fs.promises.writeFile(target, body, { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  }
+
+  return { hash, ext };
+}
+
+async function readSubtitleProxyFile(hash, ext) {
+  if (!/^[a-f0-9]{64}$/i.test(hash) || !['srt', 'vtt'].includes(ext)) return null;
+  try {
+    const body = await fs.promises.readFile(subtitleProxyFilePath(hash.toLowerCase(), ext));
+    if (!body.length || body.length > SUBTITLE_FILE_MAX_BYTES) return null;
+    const actual = crypto.createHash('sha256').update(body).digest('hex');
+    return actual === hash.toLowerCase() ? body : null;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function prepareHybridSubtitleTrack(req, streamuj, track, index) {
+  const sourceUrl = track && (track.directUrl || track.sourceUrl);
+  if (!/^https:\/\//i.test(String(sourceUrl || ''))) return null;
+
+  try {
+    const file = await streamuj.downloadSubtitleFile(sourceUrl);
+    const stored = await storeSubtitleProxyFile(file.body, file.ext);
+    const base = getHost(req).replace(/\/$/, '');
+    const url = `${base}/subtitle-file/v1/${stored.hash}.${stored.ext}`;
+    return {
+      id: `sosac-hybrid-${track.lang || 'und'}-${stored.hash.slice(0, 12)}`,
+      url,
+      lang: track.lang || 'und',
+      delivery: `proxy-${stored.ext}`
+    };
+  } catch (error) {
+    console.warn(`[subtitle-hybrid] proxy selhal pro stopu ${index + 1}: ${error.message}; vracím direct`);
+    return {
+      id: `sosac-direct-fallback-${track.lang || 'und'}-${index + 1}`,
+      url: sourceUrl,
+      lang: track.lang || 'und',
+      delivery: 'direct-fallback'
+    };
+  }
+}
+
 async function handleSubtitles(req, res) {
   const cfg = decodeConfig(req.params.cfg);
   if (!cfg) return res.json({ subtitles: [] });
@@ -522,9 +598,13 @@ async function handleSubtitles(req, res) {
     const streamuj = makeStreamuj(cfg);
     if (!sosac.isConfigured() || !streamuj.isConfigured()) return res.json({ subtitles: [] });
 
+    const mode = getSubtitleMode(cfg);
     const lookupKey = `sub:${req.params.cfg}:${type}:${id}`;
     const cached = subtitleLookupCache.get(lookupKey);
-    if (cached) return res.json({ subtitles: cached });
+    if (cached) {
+      console.log(`[subtitle-${mode}] ${type}/${id}: používám krátkou cache (${cached.length} stop)`);
+      return res.json({ subtitles: cached });
+    }
 
     const linkId = await resolveLinkId(sosac, type, id);
     if (!linkId) {
@@ -533,16 +613,41 @@ async function handleSubtitles(req, res) {
     }
 
     const tracks = await streamuj.getSubtitleTracks(linkId);
-    const direct = tracks
-      .map((track, index) => ({
-        id: `sosac-direct-${track.lang || 'und'}-${index + 1}`,
-        url: track.directUrl || track.sourceUrl,
-        lang: track.lang || 'und'
+    let subtitles = [];
+
+    if (mode === 'direct-test') {
+      subtitles = tracks
+        .map((track, index) => ({
+          id: `sosac-direct-${track.lang || 'und'}-${index + 1}`,
+          url: track.directUrl || track.sourceUrl,
+          lang: track.lang || 'und',
+          delivery: 'direct-test'
+        }))
+        .filter(track => /^https:\/\//i.test(String(track.url || '')));
+    } else {
+      subtitles = (await Promise.all(
+        tracks.slice(0, 12).map((track, index) =>
+          prepareHybridSubtitleTrack(req, streamuj, track, index)
+        )
+      )).filter(Boolean);
+    }
+
+    if (subtitles.length) subtitleLookupCache.set(lookupKey, subtitles, 120);
+
+    console.log(`[subtitle-${mode}] ${type}/${id}: vracím ${subtitles.length} stop ${JSON.stringify(
+      subtitles.map(track => ({
+        lang: track.lang,
+        delivery: track.delivery || mode
       }))
-      .filter(track => /^https:\/\//i.test(String(track.url || '')));
-    if (direct.length) subtitleLookupCache.set(lookupKey, direct, 120);
-    console.log(`[subtitle-direct] ${type}/${id}: vracím ${direct.length} přímých stop`);
-    return res.json({ subtitles: direct });
+    )}`);
+
+    return res.json({
+      subtitles: subtitles.map(({ id: subtitleId, url, lang }) => ({
+        id: subtitleId,
+        url,
+        lang
+      }))
+    });
   } catch (error) {
     console.error('[subtitle]', error.message);
     return res.json({ subtitles: [] });
@@ -551,6 +656,30 @@ async function handleSubtitles(req, res) {
 
 app.get('/', (req, res) => res.redirect('/configure'));
 app.get('/configure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'configure.html')));
+
+app.get('/subtitle-file/v1/:hash.:ext', async (req, res) => {
+  const hash = String(req.params.hash || '').toLowerCase();
+  const ext = String(req.params.ext || '').toLowerCase();
+
+  try {
+    const body = await readSubtitleProxyFile(hash, ext);
+    if (!body) return res.status(404).type('text/plain').send('Titulky nenalezeny.');
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Content-Type', ext === 'vtt'
+      ? 'text/vtt; charset=utf-8'
+      : 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Length', body.length);
+    console.log(`[subtitle-hybrid-serve] ${hash.slice(0, 12)}.${ext} bytes=${body.length} ua=${String(req.headers['user-agent'] || '').slice(0, 120)}`);
+
+    if (req.method === 'HEAD') return res.end();
+    return res.end(body);
+  } catch (error) {
+    console.error('[subtitle-hybrid-serve]', error.message);
+    return res.status(500).type('text/plain').send('Chyba titulků.');
+  }
+});
 
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -635,7 +764,9 @@ app.get('/health', (req, res) => res.json({
   subtitleLookups: subtitleLookupCache.keys().length,
   debugStreamujRaw: DEBUG_STREAMUJ_RAW,
   mediaProxy: false,
-  directSubtitles: true
+  subtitleModeDefault: 'hybrid',
+  subtitleProxy: true,
+  directTest: true
 }));
 
 app.listen(PORT, '0.0.0.0', () => {
