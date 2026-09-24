@@ -25,6 +25,7 @@ fi
 git merge --ff-only "origin/Master"
 
 npm ci --omit=dev --no-audit --no-fund
+npm run version:check
 node --check addon.js
 
 pm2 restart "stremio-sosac" --update-env
