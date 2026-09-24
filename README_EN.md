@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERSION-v0.5.1-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč version 0.5.1" />
+  <img src="https://img.shields.io/github/package-json/v/CaseyCZ/stremio.sosac?style=for-the-badge&label=VERSION&color=38BDF8&labelColor=0284C7" alt="Current Stremio Sosáč version" />
 </p>
 
 <p align="center">
@@ -46,6 +46,12 @@ The two add-ons are **not technically linked**: each has its own manifest, confi
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Configure-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles configuration" /></a>
   <a href="https://github.com/CaseyCZ/stremio.sosac.subtitles"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-GitHub-38BDF8?style=for-the-badge&labelColor=0284C7&logo=github&logoColor=white" alt="Sosáč Subtitles GitHub" /></a>
 </p>
+
+## Versioning
+
+`package.json` is the single source of truth for the version number. The manifest and `/health` read it directly, the configuration page loads it from `/health`, and the README badge reads it automatically from `package.json`. A release version no longer needs to be edited in several places manually.
+
+Use `npm run release:patch`, `npm run release:minor` or `npm run release:major` to change the version; npm updates `package-lock.json` at the same time.
 
 ## Important
 
