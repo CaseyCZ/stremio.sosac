@@ -6,7 +6,11 @@
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js",
-    "dev": "node --watch addon.js"
+    "dev": "node --watch addon.js",
+    "version:check": "node scripts/check-version.js",
+    "release:patch": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major"
   },
   "engines": {
     "node": ">=20"
