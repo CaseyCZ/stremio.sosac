@@ -48,7 +48,7 @@
     <section class="card">
       <div class="badges">
         <span class="badge">🎬 Hlavní addon</span>
-        <span class="badge">📦 Verze 0.5.1</span>
+        <span id="versionBadge" class="badge">📦 Verze …</span>
         <span class="badge">🎞️ Direct video</span>
         <div class="mode-switch" role="group" aria-label="Režim titulků">
           <button id="hybridMode" class="mode-btn active" type="button" aria-pressed="true">🔁 Hybrid titulky</button>
@@ -141,6 +141,7 @@ function copyText(value,input,status){
   }
 }
 
+const versionBadge=document.getElementById('versionBadge');
 const hybridMode=document.getElementById('hybridMode');
 const directMode=document.getElementById('directMode');
 const modeLead=document.getElementById('modeLead');
@@ -149,6 +150,27 @@ const modeNote=document.getElementById('modeNote');
 const stremioBtn=document.getElementById('stremioBtn');
 const generateBtn=document.getElementById('generate');
 let selectedMode='hybrid';
+
+function getBasePath(){
+  return location.pathname.replace(/\/configure\/?$/,'').replace(/\/$/,'');
+}
+
+async function loadVersionBadge(){
+  const candidates=[`${getBasePath()}/health`, '/health'];
+  for(const url of [...new Set(candidates)]){
+    try{
+      const response=await fetch(url,{cache:'no-store'});
+      if(!response.ok)continue;
+      const data=await response.json();
+      if(data&&data.version){
+        versionBadge.textContent=`📦 Verze ${data.version}`;
+        return;
+      }
+    }catch(_){}
+  }
+  versionBadge.textContent='📦 Verze';
+}
+
 
 function applyMode(mode){
   selectedMode=mode==='direct-test'?'direct-test':'hybrid';
@@ -212,7 +234,7 @@ function buildInstallLink(showValidation=true){
   }
 
   const encoded=toBase64Url(cfg);
-  const basePath=location.pathname.replace(/\/configure\/?$/,'').replace(/\/$/,'');
+  const basePath=getBasePath();
   const path=`${basePath}/${encoded}/manifest.json`;
   const manifest=`${location.origin}${path}`;
   const install=`stremio://${location.host}${path}`;
@@ -233,6 +255,7 @@ document.getElementById('generate').addEventListener('click',()=>{
 });
 
 applyMode('hybrid');
+loadVersionBadge();
 
 document.getElementById('copyUrl').addEventListener('click',()=>{
   const input=document.getElementById('installUrl');
