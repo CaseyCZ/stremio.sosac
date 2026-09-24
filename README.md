@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERZE-v0.5.0-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč verze 0.5.0" />
+  <img src="https://img.shields.io/badge/VERZE-v0.5.1-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč verze 0.5.1" />
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 ## O projektu
 
-**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video i titulky jsou předávány klientovi přímo ze Streamuj.tv; server addonu zajišťuje katalog, mapování a resolver.
+**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video zůstává předáváno přímo ze Streamuj.tv. Titulky mají od verze **0.5.1** dva režimy: výchozí **Hybrid**, který zachová původní SRT/VTT a vystaví jej přes kompatibilní URL s příponou, a **Direct test**, který předává původní Streamuj URL přímo klientovi.
 
 ## Hlavní funkce
 
@@ -30,14 +30,17 @@
 - 🖼️ metadata, plakáty a popisy titulů
 - 🇨🇿 české, slovenské a další dostupné jazykové varianty
 - 📺 výběr dostupných kvalit streamu
-- 💬 přímé titulky ze Streamuj.tv
-- ↗️ přímé přehrávání médií bez video proxy přes server addonu
+- 💬 výchozí Hybrid titulky s kompatibilní `.srt` / `.vtt` URL
+- 🧪 volitelný Direct test pro ověření přímých Streamuj subtitle URL
+- ↗️ přímé přehrávání videa bez video proxy přes server addonu
 - ⚡ rychlejší opakované načítání
 - 📱 použití na běžných Stremio klientech na desktopu, webu, Androidu / Google TV a Apple zařízeních
 
 ## Související projekt
 
-Hlavní addon od verze **0.5.0** obsahuje vlastní přímé titulky. Samostatný **Sosáč Subtitles** zůstává dostupný jako doplňkový projekt.
+Hlavní addon od verze **0.5.1** obsahuje vlastní Hybrid i Direct test režim titulků. Samostatný **Sosáč Subtitles** zůstává dostupný jako nezávislý doplňkový projekt.
+
+Oba addony **nejsou technicky propojené**: mají vlastní manifest, konfiguraci, cache a přihlašovací údaje v instalačním odkazu. Nastavení ani zvolený režim se mezi nimi automaticky nesdílí. Lze je instalovat a testovat samostatně.
 
 <p>
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Konfigurace-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles konfigurace" /></a>
