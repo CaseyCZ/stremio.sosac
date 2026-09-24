@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERSION-v0.5.0-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč version 0.5.0" />
+  <img src="https://img.shields.io/badge/VERSION-v0.5.1-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč version 0.5.1" />
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 ## About
 
-**Stremio Sosáč** brings catalogs, search, metadata, streams and available subtitles into Stremio. Video and subtitles are handed directly to the client from Streamuj.tv; the add-on server handles catalogs, mapping and resolving.
+**Stremio Sosáč** brings catalogs, search, metadata, streams and available subtitles into Stremio. Video is still handed directly to the client from Streamuj.tv. Starting with **0.5.1**, subtitles have two modes: default **Hybrid**, which keeps the original SRT/VTT content and exposes it through a compatible URL with a file extension, and **Direct test**, which hands the original Streamuj subtitle URL directly to the client.
 
 ## Main features
 
@@ -30,14 +30,17 @@
 - 🖼️ metadata, posters and title descriptions
 - 🇨🇿 Czech, Slovak and other available language variants
 - 📺 selectable stream qualities
-- 💬 direct subtitles from Streamuj.tv
-- ↗️ direct media playback without routing video through the add-on server
+- 💬 default Hybrid subtitles with compatible `.srt` / `.vtt` URLs
+- 🧪 optional Direct test mode for testing original Streamuj subtitle URLs
+- ↗️ direct video playback without routing video through the add-on server
 - ⚡ faster repeated loading
 - 📱 support for common Stremio clients on desktop, web, Android / Google TV and Apple devices
 
 ## Related project
 
-Starting with **0.5.0**, the main add-on includes its own direct subtitle support. The separate **Sosáč Subtitles** project remains available as an optional companion.
+Starting with **0.5.1**, the main add-on includes both Hybrid and Direct test subtitle modes. The separate **Sosáč Subtitles** project remains available as an independent companion.
+
+The two add-ons are **not technically linked**: each has its own manifest, configuration, cache and credentials stored in its installation URL. Settings and the selected subtitle mode are not shared automatically between them. They can be installed and tested independently.
 
 <p>
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Configure-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles configuration" /></a>
