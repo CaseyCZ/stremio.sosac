@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/VERZE-v0.5.1-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Stremio Sosáč verze 0.5.1" />
+  <img src="https://img.shields.io/github/package-json/v/CaseyCZ/stremio.sosac?style=for-the-badge&label=VERZE&color=38BDF8&labelColor=0284C7" alt="Aktuální verze Stremio Sosáč" />
 </p>
 
 <p align="center">
@@ -46,6 +46,12 @@ Oba addony **nejsou technicky propojené**: mají vlastní manifest, konfiguraci
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Konfigurace-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles konfigurace" /></a>
   <a href="https://github.com/CaseyCZ/stremio.sosac.subtitles"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-GitHub-38BDF8?style=for-the-badge&labelColor=0284C7&logo=github&logoColor=white" alt="Sosáč Subtitles GitHub" /></a>
 </p>
+
+## Verzování
+
+Jediným zdrojem čísla verze je `package.json`. Manifest a `/health` čtou verzi přímo z něj, konfigurační stránka ji načítá z `/health` a badge v README ji načítá automaticky z `package.json`. Při vydání nové verze tedy není potřeba ručně přepisovat číslo na více místech.
+
+Pro změnu verze používej `npm run release:patch`, `npm run release:minor` nebo `npm run release:major`; npm současně aktualizuje i `package-lock.json`.
 
 ## Důležité
 
