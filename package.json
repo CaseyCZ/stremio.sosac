@@ -1,6 +1,6 @@
 {
   "name": "stremio-sosac",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Stremio Sosac addon using Streamuj d=19 with direct video and direct subtitles.",
   "main": "addon.js",
