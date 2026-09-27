@@ -11,8 +11,7 @@ const {
   getLocalizedTitle,
   getLocalizedDescription
 } = require('./api/sosac');
-const axios = require('axios');
-const { StreamujApi, getStreamProxy } = require('./api/streamuj');
+const { StreamujApi } = require('./api/streamuj');
 const {
   CinemetaApi,
   titleScore,
@@ -745,11 +744,8 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     const linkId = await resolveLinkId(sosac, type, id);
     if (!linkId) return res.json({ streams: [] });
 
-    const streams = await streamuj.getStreams(linkId, { proxyBaseUrl: getHost(req) });
-    const proxied = streams.filter(item =>
-      typeof item?.url === 'string' && item.url.includes('/video-proxy/v1/')
-    ).length;
-    console.log(`[stream] ${type}/${id}: streams=${streams.length}, proxied=${proxied}, version=${VERSION}`);
+    const streams = await streamuj.getStreams(linkId);
+    console.log(`[stream] ${type}/${id}: streams=${streams.length}, videoDevice=18, direct=true, version=${VERSION}`);
     return res.json({ streams });
   } catch (error) {
     console.error('[stream]', error.message);
@@ -757,143 +753,7 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
   }
 });
 
-async function refreshVideoProxyTarget(entry) {
-  const indirectUrl = String(entry?.indirectUrl || '');
-  if (!/^https?:\/\//i.test(indirectUrl)) return false;
 
-  try {
-    const response = await axios.get(indirectUrl, {
-      responseType: 'text',
-      transformResponse: [data => data],
-      timeout: 15000,
-      maxRedirects: 5,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-        Accept: 'text/plain, */*',
-        Referer: `https://${entry.provider}/`
-      },
-      validateStatus: status => status >= 200 && status < 400
-    });
-
-    const body = typeof response.data === 'string' ? response.data.trim() : String(response.data || '').trim();
-    if (!/^https?:\/\//i.test(body)) return false;
-
-    entry.url = body;
-    entry.refreshedAt = Date.now();
-    console.log('[video-proxy] refreshed expired upstream URL');
-    return true;
-  } catch (error) {
-    console.warn(`[video-proxy] refresh failed: ${error.message}`);
-    return false;
-  }
-}
-
-function videoProxyHeaders(req, entry, target, isHead) {
-  const isStreamujHost =
-    target.hostname === 'streamuj.tv' ||
-    target.hostname.endsWith('.streamuj.tv');
-
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-    Accept: 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-    Referer: `https://${entry.provider}/`
-  };
-
-  if (isStreamujHost && entry.cookie) headers.Cookie = entry.cookie;
-  if (!isHead && req.headers.range) headers.Range = req.headers.range;
-  if (!isHead && req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
-  return headers;
-}
-
-async function requestVideoUpstream(req, entry, isHead) {
-  const target = new URL(entry.url);
-  const upstream = await axios({
-    // Some Streamuj/CDN endpoints reject HEAD. Probe with GET and close the body for HEAD requests.
-    method: 'get',
-    url: entry.url,
-    responseType: 'stream',
-    timeout: 30000,
-    maxRedirects: 5,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-    headers: videoProxyHeaders(req, entry, target, isHead),
-    validateStatus: status => status >= 200 && status < 500
-  });
-  return { upstream, target };
-}
-
-async function handleVideoProxy(req, res) {
-  const entry = getStreamProxy(req.params.token);
-  if (!entry) {
-    console.warn('[video-proxy] token missing/expired');
-    return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
-  }
-
-  const isHead = req.method === 'HEAD';
-  let upstream;
-  let target;
-
-  try {
-    ({ upstream, target } = await requestVideoUpstream(req, entry, isHead));
-
-    if ([401, 403, 404, 410].includes(upstream.status) && entry.indirectUrl) {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-      const refreshed = await refreshVideoProxyTarget(entry);
-      if (refreshed) ({ upstream, target } = await requestVideoUpstream(req, entry, isHead));
-    }
-
-    console.log(
-      `[video-proxy] ${req.method} host=${target.hostname} range=${req.headers.range || '-'} status=${upstream.status} type=${upstream.headers['content-type'] || '-'} length=${upstream.headers['content-length'] || '-'}`
-    );
-
-    res.status(upstream.status);
-
-    for (const name of [
-      'content-length',
-      'content-range',
-      'cache-control',
-      'etag',
-      'last-modified'
-    ]) {
-      const value = upstream.headers[name];
-      if (value !== undefined) res.setHeader(name, value);
-    }
-
-    const upstreamType = String(upstream.headers['content-type'] || '');
-    res.setHeader('Content-Type', /^video\//i.test(upstreamType) ? upstreamType : 'video/mp4');
-    res.setHeader('Accept-Ranges', upstream.headers['accept-ranges'] || 'bytes');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-store');
-
-    if (isHead) {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-      return res.end();
-    }
-
-    upstream.data.on('error', error => {
-      console.warn('[video-proxy] upstream stream error:', error.message);
-      if (!res.headersSent) res.status(502).end();
-      else res.destroy(error);
-    });
-
-    res.on('close', () => {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-    });
-
-    upstream.data.pipe(res);
-  } catch (error) {
-    const code = error?.code || error?.response?.status || '-';
-    console.error(`[video-proxy] failed code=${code}: ${error.message}`);
-    if (!res.headersSent) return res.status(502).type('text/plain').send('Upstream stream není dostupný.');
-    res.destroy(error);
-  }
-}
-
-app.get('/video-proxy/v1/:token.mp4', handleVideoProxy);
-app.head('/video-proxy/v1/:token.mp4', handleVideoProxy);
-// Keep the old route for already-cached Stremio stream entries.
-app.get('/video-proxy/v1/:token', handleVideoProxy);
-app.head('/video-proxy/v1/:token', handleVideoProxy);
 
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
@@ -906,9 +766,9 @@ app.get('/health', (req, res) => res.json({
   idMappings: idMapCache.keys().length,
   subtitleLookups: subtitleLookupCache.keys().length,
   debugStreamujRaw: DEBUG_STREAMUJ_RAW,
-  mediaProxy: true,
-  mediaProxyExtension: '.mp4',
-  mediaProxyRefresh: true,
+  mediaProxy: false,
+  videoDevice: 18,
+  videoPlayback: 'direct-0.4.5-path',
   subtitleModeDefault: 'hybrid',
   subtitleProxy: true,
   directTest: true
