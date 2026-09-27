@@ -756,10 +756,8 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
 
 
 
-async function refreshVideoProxyTarget(entry) {
-  const indirectUrl = String(entry?.indirectUrl || '');
-  if (!/^https?:\/\//i.test(indirectUrl)) return false;
-
+async function resolveFreshIndirectUrl(indirectUrl, entry) {
+  if (!/^https?:\/\//i.test(String(indirectUrl || ''))) return null;
   try {
     const response = await axios.get(indirectUrl, {
       responseType: 'text',
@@ -772,15 +770,82 @@ async function refreshVideoProxyTarget(entry) {
       },
       validateStatus: status => status >= 200 && status < 400
     });
-
     const body = typeof response.data === 'string' ? response.data.trim() : String(response.data || '').trim();
-    if (!/^https?:\/\//i.test(body)) return false;
+    return /^https?:\/\//i.test(body) ? body : null;
+  } catch (error) {
+    console.warn(`[video-hybrid] indirect resolve failed: ${error.message}`);
+    return null;
+  }
+}
 
-    entry.url = body;
+async function refreshVideoProxyTarget(entry, force = false) {
+  // There is only one video URL. Reacquire that SAME URL from the d=18 player API
+  // instead of trying another quality/source.
+  if (!entry?.linkId || !entry?.username || !entry?.passwordHash) {
+    const fallback = await resolveFreshIndirectUrl(entry?.indirectUrl, entry);
+    if (!fallback) return false;
+    entry.url = fallback;
     entry.refreshedAt = Date.now();
     return true;
+  }
+
+  if (!force && Date.now() - Number(entry.refreshedAt || 0) < 45000) return true;
+
+  try {
+    const response = await axios.get(`https://${entry.provider}/json_api_player.php`, {
+      timeout: 15000,
+      maxRedirects: 5,
+      params: {
+        action: 'get-video-links',
+        d: 18,
+        link: entry.linkId,
+        login: entry.username,
+        password: entry.passwordHash,
+        location: entry.location,
+        _: Date.now()
+      },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)',
+        Accept: 'application/json, text/plain, */*',
+        'Cache-Control': 'no-cache'
+      },
+      validateStatus: status => status >= 200 && status < 400
+    });
+
+    const data = response.data;
+    if (!data || !data.URL || typeof data.URL !== 'object') {
+      console.warn('[video-hybrid] fresh d=18 response has no URL object');
+      return false;
+    }
+
+    let freshIndirect = null;
+    for (const langData of Object.values(data.URL)) {
+      if (!langData || typeof langData !== 'object') continue;
+      for (const [key, value] of Object.entries(langData)) {
+        if (key === 'subtitles') continue;
+        if (typeof value === 'string' && /^https?:\/\//i.test(value)) {
+          freshIndirect = value;
+          break;
+        }
+      }
+      if (freshIndirect) break;
+    }
+
+    if (!freshIndirect) {
+      console.warn('[video-hybrid] fresh d=18 response contains no video URL');
+      return false;
+    }
+
+    const freshFinal = await resolveFreshIndirectUrl(freshIndirect, entry);
+    if (!freshFinal) return false;
+
+    entry.indirectUrl = freshIndirect;
+    entry.url = freshFinal;
+    entry.refreshedAt = Date.now();
+    console.log(`[video-hybrid] refreshed SAME d=18 video link=${entry.linkId}`);
+    return true;
   } catch (error) {
-    console.warn(`[video-hybrid] refresh failed: ${error.message}`);
+    console.warn(`[video-hybrid] d=18 refresh failed: ${error.message}`);
     return false;
   }
 }
@@ -826,15 +891,14 @@ async function handleHybridVideoProxy(req, res) {
   }
 
   try {
-    // Refresh the final CDN URL before every new player request/range.
-    // This prevents a short-lived Streamuj URL from dying in the middle of a film.
-    await refreshVideoProxyTarget(entry);
+    // Keep the same single video, but reacquire a fresh d=18 URL when it is aging.
+    await refreshVideoProxyTarget(entry, false);
 
     let { upstream, target } = await openVideoUpstream(req, entry);
 
     if ([401, 403, 404, 410].includes(upstream.status)) {
       if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-      const refreshed = await refreshVideoProxyTarget(entry);
+      const refreshed = await refreshVideoProxyTarget(entry, true);
       if (refreshed) ({ upstream, target } = await openVideoUpstream(req, entry));
     }
 
@@ -900,8 +964,9 @@ app.get('/health', (req, res) => res.json({
   debugStreamujRaw: DEBUG_STREAMUJ_RAW,
   mediaProxy: true,
   videoDevice: 18,
-  videoPlayback: 'hybrid-d18-refresh-proxy',
-  videoProxyVersion: 2,
+  videoPlayback: 'hybrid-d18-source-refresh',
+  videoProxyVersion: 3,
+  videoSingleSourceRefresh: true,
   subtitleModeDefault: 'hybrid',
   subtitleProxy: true,
   directTest: true

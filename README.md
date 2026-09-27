@@ -21,7 +21,7 @@
 
 ## O projektu
 
-**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video od verze **0.5.5** používá **Hybrid d=18**: ověřené Streamuj `d=18` získávání videa z verze 0.4.5, ale samotné přehrávání vede přes obnovovací range-aware proxy addonu. Při novém Range požadavku se finální CDN odkaz znovu obnoví, aby krátkodobá URL nespadla po několika minutách. Titulky mají od verze **0.5.1** dva režimy: výchozí **Hybrid**, který zachová původní SRT/VTT a vystaví jej přes kompatibilní URL s příponou, a **Direct test**, který předává původní Streamuj URL přímo klientovi.
+**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video od verze **0.5.6** používá **Hybrid d=18 pro jediný dostupný video zdroj**. Addon nepřepíná na jinou kvalitu ani jiný odkaz; při stárnutí nebo chybě 401/403/404/410 si znovu vyžádá tentýž video zdroj přes Streamuj player API `d=18`, znovu vyřeší čerstvou CDN URL a pokračuje přes range-aware proxy. Titulky mají od verze **0.5.1** dva režimy: výchozí **Hybrid**, který zachová původní SRT/VTT a vystaví jej přes kompatibilní URL s příponou, a **Direct test**, který předává původní Streamuj URL přímo klientovi.
 
 ## Hlavní funkce
 
@@ -32,7 +32,7 @@
 - 📺 výběr dostupných kvalit streamu
 - 💬 výchozí Hybrid titulky s kompatibilní `.srt` / `.vtt` URL
 - 🧪 volitelný Direct test pro ověření přímých Streamuj subtitle URL
-- 🔄 Hybrid video: `d=18` + obnovovací range-aware proxy pro delší přehrávání
+- 🔄 Hybrid video: jediný zdroj přes `d=18` + znovuzískání čerstvé CDN URL při expiraci
 - ⚡ rychlejší opakované načítání
 - 📱 použití na běžných Stremio klientech na desktopu, webu, Androidu / Google TV a Apple zařízeních
 

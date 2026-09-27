@@ -38,8 +38,13 @@ function registerStreamProxy(indirectUrl, finalUrl, options = {}) {
     url: finalUrl,
     provider: String(options.provider || 'www.streamuj.tv'),
     cookie: String(options.cookie || ''),
+    linkId: String(options.linkId || ''),
+    username: String(options.username || ''),
+    passwordHash: String(options.passwordHash || ''),
+    location: String(options.location) === '2' ? '2' : '1',
+    device: 18,
     createdAt: Date.now(),
-    refreshedAt: 0
+    refreshedAt: Date.now()
   });
   return token;
 }
@@ -424,7 +429,11 @@ class StreamujApi {
       if (proxyBaseUrl) {
         const token = registerStreamProxy(item.indirectUrl, item.finalUrl, {
           provider: this.provider,
-          cookie: this.authCookie()
+          cookie: this.authCookie(),
+          linkId,
+          username: this.username,
+          passwordHash: this.passwordHash,
+          location: this.location
         });
         if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v2/${token}.mp4`;
       }
