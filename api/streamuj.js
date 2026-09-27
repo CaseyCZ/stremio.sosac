@@ -28,32 +28,6 @@ const videoLinksCache = new NodeCache({ stdTTL: 60, checkperiod: 30, maxKeys: 12
 const indirectUrlCache = new NodeCache({ stdTTL: 45, checkperiod: 30, maxKeys: 2400, useClones: false });
 const pendingVideoLinks = new Map();
 const pendingIndirectUrls = new Map();
-const streamProxyCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 5 * 60, maxKeys: 5000, useClones: false });
-
-function registerStreamProxy(indirectUrl, finalUrl, options = {}) {
-  if (typeof finalUrl !== 'string' || !/^https?:\/\//i.test(finalUrl)) return null;
-  const token = crypto.randomBytes(24).toString('hex');
-  streamProxyCache.set(token, {
-    indirectUrl: typeof indirectUrl === 'string' ? indirectUrl : '',
-    url: finalUrl,
-    provider: String(options.provider || 'www.streamuj.tv'),
-    cookie: String(options.cookie || ''),
-    linkId: String(options.linkId || ''),
-    username: String(options.username || ''),
-    passwordHash: String(options.passwordHash || ''),
-    location: String(options.location) === '2' ? '2' : '1',
-    device: 18,
-    createdAt: Date.now(),
-    refreshedAt: Date.now()
-  });
-  return token;
-}
-
-function getStreamProxy(token) {
-  if (!/^[a-f0-9]{48}$/i.test(String(token || ''))) return null;
-  return streamProxyCache.get(String(token)) || null;
-}
-
 
 function md5(value) {
   return crypto.createHash('md5').update(String(value || '')).digest('hex');
@@ -205,7 +179,7 @@ class StreamujApi {
     this.http = axios.create({
       timeout: 20000,
       maxContentLength: 2 * 1024 * 1024,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)', Accept: 'application/json, text/plain, */*' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36', Accept: 'application/json, text/plain, */*' }
     });
   }
   isConfigured() { return Boolean(this.username && this.hasPassword && this.passwordHash); }
@@ -224,7 +198,7 @@ class StreamujApi {
     ]);
   }
 
-  async getVideoLinks(linkId, device = 18) {
+  async getVideoLinks(linkId, device = 19) {
     if (!this.isConfigured() || !linkId) return null;
 
     const key = this.videoLinksCacheKey(linkId, device);
@@ -391,12 +365,13 @@ class StreamujApi {
     return pending;
   }
 
-  async getStreams(linkId, options = {}) {
-    const data = await this.getVideoLinks(linkId, 18);
+  async getStreams(linkId) {
+    const data = await this.getVideoLinks(linkId, 19);
     if (!data || !data.URL || typeof data.URL !== 'object') return [];
 
-    // Video path restored exactly to the proven 0.4.5 device mode.
-    // Subtitle delivery remains handled independently by the current Hybrid/Direct resource.
+    // Only inspect subtitle metadata already present in the player response so
+    // the stream description can mention it. Actual subtitle files are served
+    // exclusively by the /subtitles resource and must never delay video startup.
     const rawSubtitles = collectSubtitleTracksFromData(data, this.provider);
 
     const jobs = [];
@@ -411,36 +386,19 @@ class StreamujApi {
         jobs.push((async () => {
           const finalUrl = await this.resolveIndirectUrl(indirectUrl);
           if (!finalUrl) return null;
-          return { lang, quality, indirectUrl, finalUrl };
+          return { lang, quality, finalUrl };
         })());
       }
     }
 
     const resolved = await Promise.all(jobs);
     const result = [];
-    const proxyBaseUrl = typeof options.proxyBaseUrl === 'string'
-      ? options.proxyBaseUrl.replace(/\/+$/, '')
-      : '';
 
     for (const item of resolved) {
       if (!item) continue;
-
-      let playbackUrl = item.finalUrl;
-      if (proxyBaseUrl) {
-        const token = registerStreamProxy(item.indirectUrl, item.finalUrl, {
-          provider: this.provider,
-          cookie: this.authCookie(),
-          linkId,
-          username: this.username,
-          passwordHash: this.passwordHash,
-          location: this.location
-        });
-        if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v3/${token}.mp4`;
-      }
-
-      const stream = { lang: item.lang, quality: item.quality, url: playbackUrl, subtitles: rawSubtitles };
+      const stream = { lang: item.lang, quality: item.quality, url: item.finalUrl, subtitles: rawSubtitles };
       result.push({
-        url: playbackUrl,
+        url: item.finalUrl,
         name: `Sosáč • ${QUALITY_LABELS[item.quality] || item.quality}`,
         description: buildDescription(stream),
         behaviorHints: { notWebReady: true, bingeGroup: `sosac-${item.lang.toLowerCase()}-${item.quality.toLowerCase()}` },
@@ -461,6 +419,5 @@ module.exports = {
   collectSubtitles,
   collectSubtitleTracksFromData,
   convertSrtToVtt,
-  normalizeSubtitleSourceUrl,
-  getStreamProxy
+  normalizeSubtitleSourceUrl
 };
