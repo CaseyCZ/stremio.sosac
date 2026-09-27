@@ -35,6 +35,7 @@ function registerStreamProxy(url, options = {}) {
   const token = crypto.randomBytes(24).toString('hex');
   streamProxyCache.set(token, {
     url,
+    indirectUrl: typeof options.indirectUrl === 'string' ? options.indirectUrl : '',
     provider: String(options.provider || 'www.streamuj.tv'),
     cookie: String(options.cookie || ''),
     createdAt: Date.now()
@@ -405,7 +406,7 @@ class StreamujApi {
         jobs.push((async () => {
           const finalUrl = await this.resolveIndirectUrl(indirectUrl);
           if (!finalUrl) return null;
-          return { lang, quality, finalUrl };
+          return { lang, quality, indirectUrl, finalUrl };
         })());
       }
     }
@@ -422,10 +423,11 @@ class StreamujApi {
       let playbackUrl = item.finalUrl;
       if (proxyBaseUrl) {
         const token = registerStreamProxy(item.finalUrl, {
+          indirectUrl: item.indirectUrl,
           provider: this.provider,
           cookie: this.authCookie()
         });
-        if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v1/${token}`;
+        if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v1/${token}.mp4`;
       }
 
       const stream = { lang: item.lang, quality: item.quality, url: playbackUrl, subtitles: rawSubtitles };

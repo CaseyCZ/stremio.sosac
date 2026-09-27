@@ -1,8 +1,8 @@
 {
   "name": "stremio-sosac",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": true,
-  "description": "Stremio Sosac addon using Streamuj d=19 with range-aware video proxy, Hybrid subtitles by default and a Direct test mode.",
+  "description": "Stremio Sosac addon using Streamuj d=19 with refreshable range-aware MP4 video proxy, Hybrid subtitles by default and a Direct test mode.",
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js",
