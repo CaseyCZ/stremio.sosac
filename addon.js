@@ -11,7 +11,8 @@ const {
   getLocalizedTitle,
   getLocalizedDescription
 } = require('./api/sosac');
-const { StreamujApi } = require('./api/streamuj');
+const axios = require('axios');
+const { StreamujApi, getStreamProxy } = require('./api/streamuj');
 const {
   CinemetaApi,
   titleScore,
@@ -744,8 +745,8 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
     const linkId = await resolveLinkId(sosac, type, id);
     if (!linkId) return res.json({ streams: [] });
 
-    const streams = await streamuj.getStreams(linkId);
-    console.log(`[stream] ${type}/${id}: streams=${streams.length}, videoDevice=18, direct=true, version=${VERSION}`);
+    const streams = await streamuj.getStreams(linkId, { proxyBaseUrl: getHost(req) });
+    console.log(`[stream] ${type}/${id}: streams=${streams.length}, videoDevice=18, hybridProxy=true, version=${VERSION}`);
     return res.json({ streams });
   } catch (error) {
     console.error('[stream]', error.message);
@@ -754,6 +755,137 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
 });
 
 
+
+async function refreshVideoProxyTarget(entry) {
+  const indirectUrl = String(entry?.indirectUrl || '');
+  if (!/^https?:\/\//i.test(indirectUrl)) return false;
+
+  try {
+    const response = await axios.get(indirectUrl, {
+      responseType: 'text',
+      transformResponse: [data => data],
+      timeout: 15000,
+      maxRedirects: 5,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)',
+        Accept: 'text/plain, */*'
+      },
+      validateStatus: status => status >= 200 && status < 400
+    });
+
+    const body = typeof response.data === 'string' ? response.data.trim() : String(response.data || '').trim();
+    if (!/^https?:\/\//i.test(body)) return false;
+
+    entry.url = body;
+    entry.refreshedAt = Date.now();
+    return true;
+  } catch (error) {
+    console.warn(`[video-hybrid] refresh failed: ${error.message}`);
+    return false;
+  }
+}
+
+function buildVideoHeaders(req, entry, target) {
+  const isStreamujHost =
+    target.hostname === 'streamuj.tv' ||
+    target.hostname.endsWith('.streamuj.tv');
+
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Stremio Sosac Addon)',
+    Accept: 'video/mp4,video/*;q=0.9,*/*;q=0.8',
+    Referer: `https://${entry.provider}/`
+  };
+
+  if (isStreamujHost && entry.cookie) headers.Cookie = entry.cookie;
+  if (req.headers.range) headers.Range = req.headers.range;
+  if (req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
+  return headers;
+}
+
+async function openVideoUpstream(req, entry) {
+  const target = new URL(entry.url);
+  const upstream = await axios({
+    method: 'get',
+    url: entry.url,
+    responseType: 'stream',
+    timeout: 0,
+    maxRedirects: 5,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+    headers: buildVideoHeaders(req, entry, target),
+    validateStatus: status => status >= 200 && status < 500
+  });
+  return { upstream, target };
+}
+
+async function handleHybridVideoProxy(req, res) {
+  const entry = getStreamProxy(req.params.token);
+  if (!entry) {
+    console.warn('[video-hybrid] token missing/expired');
+    return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
+  }
+
+  try {
+    // Refresh the final CDN URL before every new player request/range.
+    // This prevents a short-lived Streamuj URL from dying in the middle of a film.
+    await refreshVideoProxyTarget(entry);
+
+    let { upstream, target } = await openVideoUpstream(req, entry);
+
+    if ([401, 403, 404, 410].includes(upstream.status)) {
+      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
+      const refreshed = await refreshVideoProxyTarget(entry);
+      if (refreshed) ({ upstream, target } = await openVideoUpstream(req, entry));
+    }
+
+    console.log(
+      `[video-hybrid] ${req.method} host=${target.hostname} range=${req.headers.range || '-'} status=${upstream.status} type=${upstream.headers['content-type'] || '-'}`
+    );
+
+    res.status(upstream.status);
+
+    for (const name of [
+      'content-length',
+      'content-range',
+      'etag',
+      'last-modified'
+    ]) {
+      const value = upstream.headers[name];
+      if (value !== undefined) res.setHeader(name, value);
+    }
+
+    const upstreamType = String(upstream.headers['content-type'] || '');
+    res.setHeader('Content-Type', /^video\//i.test(upstreamType) ? upstreamType : 'video/mp4');
+    res.setHeader('Accept-Ranges', upstream.headers['accept-ranges'] || 'bytes');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+
+    if (req.method === 'HEAD') {
+      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
+      return res.end();
+    }
+
+    upstream.data.on('error', error => {
+      console.warn(`[video-hybrid] upstream stream error: ${error.message}`);
+      if (!res.headersSent) res.status(502).end();
+      else res.destroy(error);
+    });
+
+    res.on('close', () => {
+      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
+    });
+
+    upstream.data.pipe(res);
+  } catch (error) {
+    const code = error?.code || error?.response?.status || '-';
+    console.error(`[video-hybrid] failed code=${code}: ${error.message}`);
+    if (!res.headersSent) return res.status(502).type('text/plain').send('Upstream stream není dostupný.');
+    res.destroy(error);
+  }
+}
+
+app.get('/video-proxy/v2/:token.mp4', handleHybridVideoProxy);
+app.head('/video-proxy/v2/:token.mp4', handleHybridVideoProxy);
 
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
@@ -766,9 +898,10 @@ app.get('/health', (req, res) => res.json({
   idMappings: idMapCache.keys().length,
   subtitleLookups: subtitleLookupCache.keys().length,
   debugStreamujRaw: DEBUG_STREAMUJ_RAW,
-  mediaProxy: false,
+  mediaProxy: true,
   videoDevice: 18,
-  videoPlayback: 'direct-0.4.5-path',
+  videoPlayback: 'hybrid-d18-refresh-proxy',
+  videoProxyVersion: 2,
   subtitleModeDefault: 'hybrid',
   subtitleProxy: true,
   directTest: true
