@@ -21,7 +21,7 @@
 
 ## O projektu
 
-**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video zůstává předáváno přímo ze Streamuj.tv. Titulky mají od verze **0.5.1** dva režimy: výchozí **Hybrid**, který zachová původní SRT/VTT a vystaví jej přes kompatibilní URL s příponou, a **Direct test**, který předává původní Streamuj URL přímo klientovi.
+**Stremio Sosáč** přidává katalogy, vyhledávání, metadata, streamy a dostupné titulky do Stremia. Video je od verze **0.5.2** kvůli kompatibilitě přehráváno přes range-aware media proxy addonu, která doplní potřebné HTTP hlavičky. Titulky mají od verze **0.5.1** dva režimy: výchozí **Hybrid**, který zachová původní SRT/VTT a vystaví jej přes kompatibilní URL s příponou, a **Direct test**, který předává původní Streamuj URL přímo klientovi.
 
 ## Hlavní funkce
 
@@ -32,7 +32,7 @@
 - 📺 výběr dostupných kvalit streamu
 - 💬 výchozí Hybrid titulky s kompatibilní `.srt` / `.vtt` URL
 - 🧪 volitelný Direct test pro ověření přímých Streamuj subtitle URL
-- ↗️ přímé přehrávání videa bez video proxy přes server addonu
+- 📺 kompatibilní přehrávání videa přes range-aware media proxy addonu
 - ⚡ rychlejší opakované načítání
 - 📱 použití na běžných Stremio klientech na desktopu, webu, Androidu / Google TV a Apple zařízeních
 
