@@ -850,7 +850,7 @@ async function refreshVideoProxyTarget(entry, force = false) {
   }
 }
 
-function buildVideoHeaders(req, entry, target) {
+function buildVideoHeaders(req, entry, target, rangeOverride = null) {
   const isStreamujHost =
     target.hostname === 'streamuj.tv' ||
     target.hostname.endsWith('.streamuj.tv');
@@ -862,12 +862,13 @@ function buildVideoHeaders(req, entry, target) {
   };
 
   if (isStreamujHost && entry.cookie) headers.Cookie = entry.cookie;
-  if (req.headers.range) headers.Range = req.headers.range;
-  if (req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
+  const range = rangeOverride || req.headers.range;
+  if (range) headers.Range = range;
+  if (!rangeOverride && req.headers['if-range']) headers['If-Range'] = req.headers['if-range'];
   return headers;
 }
 
-async function openVideoUpstream(req, entry) {
+async function openVideoUpstream(req, entry, rangeOverride = null) {
   const target = new URL(entry.url);
   const upstream = await axios({
     method: 'get',
@@ -877,10 +878,50 @@ async function openVideoUpstream(req, entry) {
     maxRedirects: 5,
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
-    headers: buildVideoHeaders(req, entry, target),
+    headers: buildVideoHeaders(req, entry, target, rangeOverride),
     validateStatus: status => status >= 200 && status < 500
   });
   return { upstream, target };
+}
+
+function parseContentRange(value) {
+  const m = /^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i.exec(String(value || '').trim());
+  if (!m) return null;
+  return {
+    start: Number(m[1]),
+    end: Number(m[2]),
+    total: m[3] === '*' ? null : Number(m[3])
+  };
+}
+
+function parseRequestedRangeStart(value) {
+  const m = /^bytes=(\d+)-/i.exec(String(value || '').trim());
+  return m ? Number(m[1]) : 0;
+}
+
+async function writeUpstreamToClient(upstream, res) {
+  let written = 0;
+  for await (const chunk of upstream.data) {
+    if (res.destroyed || res.writableEnded) break;
+    written += chunk.length;
+    if (!res.write(chunk)) {
+      await new Promise(resolve => res.once('drain', resolve));
+    }
+  }
+  return written;
+}
+
+async function getUsableVideoUpstream(req, entry, rangeOverride = null) {
+  let opened = await openVideoUpstream(req, entry, rangeOverride);
+  if (![401, 403, 404, 410].includes(opened.upstream.status)) return opened;
+
+  if (opened.upstream.data && typeof opened.upstream.data.destroy === 'function') {
+    opened.upstream.data.destroy();
+  }
+
+  const refreshed = await refreshVideoProxyTarget(entry, true);
+  if (!refreshed) return opened;
+  return openVideoUpstream(req, entry, rangeOverride);
 }
 
 async function handleHybridVideoProxy(req, res) {
@@ -890,23 +931,37 @@ async function handleHybridVideoProxy(req, res) {
     return res.status(410).type('text/plain').send('Stream odkaz vypršel. Obnov stream ve Stremiu.');
   }
 
+  let activeUpstream = null;
+
   try {
-    // Keep the same single video, but reacquire a fresh d=18 URL when it is aging.
+    // Same one video source only. Reacquire its d=18 URL when it ages.
     await refreshVideoProxyTarget(entry, false);
 
-    let { upstream, target } = await openVideoUpstream(req, entry);
+    let opened = await getUsableVideoUpstream(req, entry);
+    activeUpstream = opened.upstream;
+    const target = opened.target;
 
-    if ([401, 403, 404, 410].includes(upstream.status)) {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-      const refreshed = await refreshVideoProxyTarget(entry, true);
-      if (refreshed) ({ upstream, target } = await openVideoUpstream(req, entry));
+    if (activeUpstream.status >= 400) {
+      console.warn(`[video-hybrid] upstream unavailable status=${activeUpstream.status}`);
+      if (activeUpstream.data && typeof activeUpstream.data.destroy === 'function') activeUpstream.data.destroy();
+      return res.status(activeUpstream.status).type('text/plain').send('Video zdroj není dostupný.');
     }
 
+    const initialContentRange = parseContentRange(activeUpstream.headers['content-range']);
+    const baseStart = initialContentRange
+      ? initialContentRange.start
+      : parseRequestedRangeStart(req.headers.range);
+    const rangeEnd = initialContentRange ? initialContentRange.end : null;
+    const expectedLengthHeader = Number(activeUpstream.headers['content-length']);
+    const expectedLength = Number.isFinite(expectedLengthHeader) && expectedLengthHeader >= 0
+      ? expectedLengthHeader
+      : (initialContentRange ? initialContentRange.end - initialContentRange.start + 1 : null);
+
     console.log(
-      `[video-hybrid] ${req.method} host=${target.hostname} range=${req.headers.range || '-'} status=${upstream.status} type=${upstream.headers['content-type'] || '-'}`
+      `[video-hybrid] ${req.method} host=${target.hostname} range=${req.headers.range || '-'} status=${activeUpstream.status} expected=${expectedLength ?? '-'}`
     );
 
-    res.status(upstream.status);
+    res.status(activeUpstream.status);
 
     for (const name of [
       'content-length',
@@ -914,42 +969,106 @@ async function handleHybridVideoProxy(req, res) {
       'etag',
       'last-modified'
     ]) {
-      const value = upstream.headers[name];
+      const value = activeUpstream.headers[name];
       if (value !== undefined) res.setHeader(name, value);
     }
 
-    const upstreamType = String(upstream.headers['content-type'] || '');
+    const upstreamType = String(activeUpstream.headers['content-type'] || '');
     res.setHeader('Content-Type', /^video\//i.test(upstreamType) ? upstreamType : 'video/mp4');
-    res.setHeader('Accept-Ranges', upstream.headers['accept-ranges'] || 'bytes');
+    res.setHeader('Accept-Ranges', activeUpstream.headers['accept-ranges'] || 'bytes');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store');
 
     if (req.method === 'HEAD') {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
+      if (activeUpstream.data && typeof activeUpstream.data.destroy === 'function') activeUpstream.data.destroy();
       return res.end();
     }
 
-    upstream.data.on('error', error => {
-      console.warn(`[video-hybrid] upstream stream error: ${error.message}`);
-      if (!res.headersSent) res.status(502).end();
-      else res.destroy(error);
-    });
+    let delivered = 0;
+    let retries = 0;
+    const maxRetries = 4;
 
-    res.on('close', () => {
-      if (upstream.data && typeof upstream.data.destroy === 'function') upstream.data.destroy();
-    });
+    while (!res.destroyed && !res.writableEnded) {
+      let cycleWritten = 0;
+      let cycleError = null;
 
-    upstream.data.pipe(res);
+      try {
+        cycleWritten = await writeUpstreamToClient(activeUpstream, res);
+        delivered += cycleWritten;
+      } catch (error) {
+        cycleError = error;
+        console.warn(`[video-hybrid] upstream interrupted after=${delivered + cycleWritten} bytes: ${error.message}`);
+        delivered += cycleWritten;
+      }
+
+      const complete = expectedLength === null
+        ? !cycleError
+        : delivered >= expectedLength;
+
+      if (complete) {
+        console.log(`[video-hybrid] completed bytes=${delivered} retries=${retries}`);
+        if (!res.writableEnded) res.end();
+        return;
+      }
+
+      if (retries >= maxRetries) {
+        console.error(`[video-hybrid] resume exhausted bytes=${delivered} expected=${expectedLength ?? '-'}`);
+        if (!res.destroyed) res.destroy(cycleError || new Error('Video upstream skončil předčasně.'));
+        return;
+      }
+
+      retries += 1;
+      const refreshed = await refreshVideoProxyTarget(entry, true);
+      if (!refreshed) {
+        console.warn(`[video-hybrid] resume ${retries}: d=18 refresh failed`);
+        continue;
+      }
+
+      const resumeStart = baseStart + delivered;
+      if (rangeEnd !== null && resumeStart > rangeEnd) {
+        if (!res.writableEnded) res.end();
+        return;
+      }
+
+      const resumeRange = `bytes=${resumeStart}-${rangeEnd !== null ? rangeEnd : ''}`;
+      opened = await getUsableVideoUpstream(req, entry, resumeRange);
+      activeUpstream = opened.upstream;
+
+      if (activeUpstream.status >= 400) {
+        console.warn(`[video-hybrid] resume ${retries}: status=${activeUpstream.status}`);
+        if (activeUpstream.data && typeof activeUpstream.data.destroy === 'function') activeUpstream.data.destroy();
+        continue;
+      }
+
+      const resumedRange = parseContentRange(activeUpstream.headers['content-range']);
+      if (activeUpstream.status === 206 && resumedRange && resumedRange.start !== resumeStart) {
+        console.warn(`[video-hybrid] resume ${retries}: wrong range start=${resumedRange.start} wanted=${resumeStart}`);
+        if (activeUpstream.data && typeof activeUpstream.data.destroy === 'function') activeUpstream.data.destroy();
+        continue;
+      }
+
+      if (resumeStart > 0 && activeUpstream.status !== 206) {
+        console.warn(`[video-hybrid] resume ${retries}: upstream ignored Range, status=${activeUpstream.status}`);
+        if (activeUpstream.data && typeof activeUpstream.data.destroy === 'function') activeUpstream.data.destroy();
+        continue;
+      }
+
+      console.log(`[video-hybrid] resume ${retries}: range=${resumeRange}`);
+    }
   } catch (error) {
     const code = error?.code || error?.response?.status || '-';
     console.error(`[video-hybrid] failed code=${code}: ${error.message}`);
     if (!res.headersSent) return res.status(502).type('text/plain').send('Upstream stream není dostupný.');
-    res.destroy(error);
+    if (!res.destroyed) res.destroy(error);
+  } finally {
+    if (activeUpstream?.data && typeof activeUpstream.data.destroy === 'function' && !activeUpstream.data.destroyed) {
+      activeUpstream.data.destroy();
+    }
   }
 }
 
-app.get('/video-proxy/v2/:token.mp4', handleHybridVideoProxy);
-app.head('/video-proxy/v2/:token.mp4', handleHybridVideoProxy);
+app.get('/video-proxy/v3/:token.mp4', handleHybridVideoProxy);
+app.head('/video-proxy/v3/:token.mp4', handleHybridVideoProxy);
 
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
@@ -964,9 +1083,10 @@ app.get('/health', (req, res) => res.json({
   debugStreamujRaw: DEBUG_STREAMUJ_RAW,
   mediaProxy: true,
   videoDevice: 18,
-  videoPlayback: 'hybrid-d18-source-refresh',
-  videoProxyVersion: 3,
+  videoPlayback: 'hybrid-d18-resumable-single-source',
+  videoProxyVersion: 4,
   videoSingleSourceRefresh: true,
+  videoResumeRetries: 4,
   subtitleModeDefault: 'hybrid',
   subtitleProxy: true,
   directTest: true

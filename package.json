@@ -1,8 +1,8 @@
 {
   "name": "stremio-sosac",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "private": true,
-  "description": "Stremio Sosac addon with hybrid d=18 single-source video playback that reacquires fresh Streamuj URLs, Hybrid subtitles by default and a Direct test mode.",
+  "description": "Stremio Sosac addon with resumable hybrid d=18 single-source video playback, Hybrid subtitles by default and a Direct test mode.",
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js",

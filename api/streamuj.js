@@ -435,7 +435,7 @@ class StreamujApi {
           passwordHash: this.passwordHash,
           location: this.location
         });
-        if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v2/${token}.mp4`;
+        if (token) playbackUrl = `${proxyBaseUrl}/video-proxy/v3/${token}.mp4`;
       }
 
       const stream = { lang: item.lang, quality: item.quality, url: playbackUrl, subtitles: rawSubtitles };
