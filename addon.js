@@ -31,7 +31,13 @@ const SUBTITLE_FILE_MAX_BYTES = 2 * 1024 * 1024;
 const cinemeta = new CinemetaApi();
 
 app.disable('etag');
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('analytics-consent.js')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
+}));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -655,7 +661,10 @@ async function handleSubtitles(req, res) {
 }
 
 app.get('/', (req, res) => res.redirect('/configure'));
-app.get('/configure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'configure.html')));
+app.get('/configure', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'configure.html'));
+});
 
 app.get('/subtitle-file/v1/:hash.:ext', async (req, res) => {
   const hash = String(req.params.hash || '').toLowerCase();
