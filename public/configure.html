@@ -276,7 +276,7 @@
         </div>
       </div>
 
-      <div class="note">Instalační konfigurace je v odkazu zapsaná jako Base64URL. Není běžně čitelná na první pohled, ale Base64 není šifrování, proto instalační odkaz nesdílej.</div>
+      <div class="note">Nové instalační odkazy používají šifrovanou konfiguraci. Přihlašovací údaje už nejsou v URL čitelné jako Base64. Instalační odkaz přesto nesdílej – kdokoli s odkazem může addon používat.</div>
 
       <button id="generate" class="primary" type="button">Vygenerovat instalační odkaz</button>
 
@@ -297,13 +297,6 @@
   </main>
 
 <script>
-function toBase64Url(obj){
-  const bytes=new TextEncoder().encode(JSON.stringify(obj));
-  let binary='';
-  bytes.forEach(b=>binary+=String.fromCharCode(b));
-  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-
 function copyText(value,input,status){
   if(!value)return;
   if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -325,9 +318,23 @@ const modeNote=document.getElementById('modeNote');
 const stremioBtn=document.getElementById('stremioBtn');
 const generateBtn=document.getElementById('generate');
 let selectedMode='hybrid';
+let configRequestId=0;
 
 function getBasePath(){
   return location.pathname.replace(/\/configure\/?$/,'').replace(/\/$/,'');
+}
+
+async function createEncryptedToken(cfg){
+  const response=await fetch(`${getBasePath()}/api/config-token`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Accept':'application/json'},
+    cache:'no-store',
+    body:JSON.stringify(cfg)
+  });
+  const data=await response.json().catch(()=>({}));
+  if(response.status===503)throw new Error('Šifrování konfigurace není na serveru připravené.');
+  if(!response.ok||!data.token)throw new Error('Nepodařilo se vytvořit šifrovanou konfiguraci.');
+  return data.token;
 }
 
 async function loadVersionBadge(){
@@ -345,7 +352,6 @@ async function loadVersionBadge(){
   }
   versionBadge.textContent='📦 Verze';
 }
-
 
 function applyMode(mode){
   selectedMode=mode==='direct-test'?'direct-test':'hybrid';
@@ -388,7 +394,9 @@ document.querySelectorAll('.toggle').forEach(button=>{
   });
 });
 
-function buildInstallLink(showValidation=true){
+async function buildInstallLink(showValidation=true){
+  const requestId=++configRequestId;
+  const requestedMode=selectedMode;
   const cfg={
     uiLanguage:document.getElementById('uiLanguage').value,
     sosacUser:document.getElementById('sosacUser').value.trim(),
@@ -396,30 +404,47 @@ function buildInstallLink(showValidation=true){
     streamujUser:document.getElementById('streamujUser').value.trim(),
     streamujPass:document.getElementById('streamujPass').value,
     location:document.getElementById('location').value,
-    subtitleMode:selectedMode
+    subtitleMode:requestedMode
   };
   const status=document.getElementById('status');
+  const result=document.getElementById('result');
+  const installUrl=document.getElementById('installUrl');
 
   if(!cfg.sosacUser||!cfg.sosacPass||!cfg.streamujUser||!cfg.streamujPass){
     if(showValidation){
-      document.getElementById('result').style.display='block';
+      result.style.display='block';
       status.textContent='Vyplň všechna přihlašovací pole.';
     }
     return false;
   }
 
-  const encoded=toBase64Url(cfg);
-  const basePath=getBasePath();
-  const path=`${basePath}/${encoded}/manifest.json`;
-  const manifest=`${location.origin}${path}`;
-  const install=`stremio://${location.host}${path}`;
-  document.getElementById('installUrl').value=manifest;
-  stremioBtn.href=install;
-  document.getElementById('result').style.display='block';
-  status.textContent=selectedMode==='direct-test'
-    ? 'Připravený Direct test odkaz.'
-    : 'Připravený Hybrid odkaz.';
-  return true;
+  result.style.display='block';
+  installUrl.value='';
+  stremioBtn.href='#';
+  generateBtn.disabled=true;
+  status.textContent='Šifruji konfiguraci…';
+
+  try{
+    const encoded=await createEncryptedToken(cfg);
+    if(requestId!==configRequestId)return false;
+
+    const basePath=getBasePath();
+    const path=`${basePath}/${encoded}/manifest.json`;
+    const manifest=`${location.origin}${path}`;
+    const install=`stremio://${location.host}${path}`;
+    installUrl.value=manifest;
+    stremioBtn.href=install;
+    status.textContent=requestedMode==='direct-test'
+      ? 'Připravený šifrovaný Direct test odkaz.'
+      : 'Připravený šifrovaný Hybrid odkaz.';
+    return true;
+  }catch(error){
+    if(requestId!==configRequestId)return false;
+    status.textContent=error&&error.message?error.message:'Nepodařilo se vytvořit šifrovanou konfiguraci.';
+    return false;
+  }finally{
+    if(requestId===configRequestId)generateBtn.disabled=false;
+  }
 }
 
 hybridMode.addEventListener('click',()=>applyMode('hybrid'));
