@@ -28,9 +28,23 @@ const idMapCache = new NodeCache({ stdTTL: 24 * 60 * 60, checkperiod: 10 * 60 })
 const subtitleLookupCache = new NodeCache({ stdTTL: 120, checkperiod: 60 });
 const SUBTITLE_CACHE_DIR = process.env.SUBTITLE_CACHE_DIR || path.join(os.tmpdir(), 'stremio-sosac-subtitles');
 const SUBTITLE_FILE_MAX_BYTES = 2 * 1024 * 1024;
+const CONFIG_KEY_FILE = process.env.CONFIG_ENCRYPTION_KEY_FILE || path.join(os.homedir(), '.stremio-sosac-config-key');
+const CONFIG_TOKEN_AAD = Buffer.from('stremio-sosac:enc1', 'utf8');
 const cinemeta = new CinemetaApi();
 
+function readConfigEncryptionKey() {
+  const candidates = [String(process.env.CONFIG_ENCRYPTION_KEY || '').trim()];
+  try { candidates.push(fs.readFileSync(CONFIG_KEY_FILE, 'utf8').trim()); } catch (_) {}
+  for (const raw of candidates) {
+    if (/^[a-f0-9]{64}$/i.test(raw)) return Buffer.from(raw, 'hex');
+  }
+  return null;
+}
+
+const CONFIG_ENCRYPTION_KEY = readConfigEncryptionKey();
+
 app.disable('etag');
+app.use(express.json({ limit: '8kb' }));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, filePath) {
     if (filePath.endsWith('analytics-consent.js')) {
@@ -41,19 +55,76 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.path.endsWith('.json')) res.setHeader('Content-Type', 'application/json; charset=utf-8');
   next();
 });
 
-function decodeConfig(value) {
+function decodeLegacyConfig(value) {
   try {
     const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(Buffer.from(normalized, 'base64').toString('utf8'));
+    const decoded = JSON.parse(Buffer.from(normalized, 'base64').toString('utf8'));
+    return decoded && typeof decoded === 'object' && !Array.isArray(decoded) ? decoded : null;
   } catch {
     return null;
   }
+}
+
+function decryptConfig(value) {
+  const parts = String(value || '').split('.');
+  if (parts.length !== 4 || parts[0] !== 'enc1' || !CONFIG_ENCRYPTION_KEY) return null;
+  try {
+    const iv = Buffer.from(parts[1], 'base64url');
+    const encrypted = Buffer.from(parts[2], 'base64url');
+    const tag = Buffer.from(parts[3], 'base64url');
+    if (iv.length !== 12 || tag.length !== 16 || !encrypted.length) return null;
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', CONFIG_ENCRYPTION_KEY, iv);
+    decipher.setAAD(CONFIG_TOKEN_AAD);
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+    const decoded = JSON.parse(plaintext);
+    return decoded && typeof decoded === 'object' && !Array.isArray(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeConfig(value) {
+  const token = String(value || '');
+  return token.startsWith('enc1.') ? decryptConfig(token) : decodeLegacyConfig(token);
+}
+
+function normalizeConfigForToken(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const cfg = {
+    uiLanguage: ['cs', 'sk', 'en'].includes(value.uiLanguage) ? value.uiLanguage : 'cs',
+    sosacUser: String(value.sosacUser || '').trim(),
+    sosacPass: String(value.sosacPass || ''),
+    streamujUser: String(value.streamujUser || '').trim(),
+    streamujPass: String(value.streamujPass || ''),
+    location: ['1', '2'].includes(String(value.location || '')) ? String(value.location) : '1',
+    subtitleMode: value.subtitleMode === 'direct-test' ? 'direct-test' : 'hybrid'
+  };
+  if (!cfg.sosacUser || !cfg.sosacPass || !cfg.streamujUser || !cfg.streamujPass) return null;
+  if (cfg.sosacUser.length > 128 || cfg.sosacPass.length > 512 || cfg.streamujUser.length > 128 || cfg.streamujPass.length > 512) return null;
+  if ([cfg.sosacUser, cfg.sosacPass, cfg.streamujUser, cfg.streamujPass].some(item => /[\0\r\n]/.test(item))) return null;
+  return cfg;
+}
+
+function encryptConfig(cfg) {
+  if (!CONFIG_ENCRYPTION_KEY) {
+    const error = new Error('Configuration encryption key is not available');
+    error.code = 'CONFIG_KEY_MISSING';
+    throw error;
+  }
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', CONFIG_ENCRYPTION_KEY, iv);
+  cipher.setAAD(CONFIG_TOKEN_AAD);
+  const encrypted = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(cfg), 'utf8')), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['enc1', iv.toString('base64url'), encrypted.toString('base64url'), tag.toString('base64url')].join('.');
 }
 
 function getSubtitleMode(cfg) {
@@ -67,6 +138,21 @@ function getHost(req) {
   const prefix = prefixRaw && prefixRaw !== '/' ? `/${prefixRaw.replace(/^\/+|\/+$/g, '')}` : '';
   return `${proto}://${host}${prefix}`;
 }
+
+app.post('/api/config-token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const cfg = normalizeConfigForToken(req.body);
+  if (!cfg) return res.status(400).json({ error: 'Invalid configuration' });
+  try {
+    return res.json({ format: 'enc1', token: encryptConfig(cfg) });
+  } catch (error) {
+    if (error && error.code === 'CONFIG_KEY_MISSING') {
+      return res.status(503).json({ error: 'Encrypted configuration is not available' });
+    }
+    console.error('[config-token]', error.message);
+    return res.status(500).json({ error: 'Unable to create encrypted configuration' });
+  }
+});
 
 function labelsFor(language) {
   const lang = ['cs', 'sk', 'en'].includes(language) ? language : 'cs';
@@ -84,9 +170,9 @@ function labelsFor(language) {
       name: 'Sosáč CZ/SK',
       moviePopular: '🔥 Sosáč – Obľúbené filmy', seriesPopular: '🔥 Sosáč – Obľúbené seriály',
       movieRecent: '🆕 Sosáč – Nové filmy', seriesRecent: '🆕 Sosáč – Nové seriály',
-      movieRated: '⭐ Sosáč – Najlepšie hodnotené filmy', seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
-      movieDub: '🎙️ Sosáč – S dabingom filmy', seriesDub: '🎙️ Sosáč – Nové epizódy s dabingom',
-      movieSubs: '💬 Sosáč – S titulkami filmy', seriesSubs: '💬 Sosáč – Nové epizódy s titulkami',
+      movieRated: '⭐ Sosáč – Najlepšie hodnocené filmy', seriesRated: '⭐ Sosáč – Najlepšie hodnotené seriály',
+      movieDub: '🎙️ Sosáč – S dabingom filmy', seriesDub: '🎙️ Sosáč – Nové epizódy s dabingem',
+      movieSubs: '💬 Sosáč – S titulky filmy', seriesSubs: '💬 Sosáč – Nové epizódy s titulky',
       movieSearch: '🔎 Sosáč – Hľadať filmy', seriesSearch: '🔎 Sosáč – Hľadať seriály'
     },
     en: {
@@ -763,7 +849,6 @@ app.get('/:cfg/meta/:type/:id.json', async (req, res) => {
 });
 
 app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
-  // Streamuj media URLs are short-lived. Never let Stremio/CDNs reuse an old stream response.
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -789,7 +874,6 @@ app.get('/:cfg/stream/:type/:id.json', async (req, res) => {
 app.get('/:cfg/subtitles/:type/:id.json', handleSubtitles);
 app.get('/:cfg/subtitles/:type/:id/:extra.json', handleSubtitles);
 
-
 app.get('/health', (req, res) => res.json({
   ok: true,
   version: VERSION,
@@ -800,7 +884,9 @@ app.get('/health', (req, res) => res.json({
   mediaProxy: false,
   subtitleModeDefault: 'hybrid',
   subtitleProxy: true,
-  directTest: true
+  directTest: true,
+  encryptedConfig: Boolean(CONFIG_ENCRYPTION_KEY),
+  encryptedConfigFormat: 'enc1'
 }));
 
 app.listen(PORT, '0.0.0.0', () => {
