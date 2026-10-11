@@ -40,12 +40,16 @@
 
 Hlavní addon od verze **0.5.1** obsahuje vlastní Hybrid i Direct test režim titulků. Samostatný **Sosáč Subtitles** zůstává dostupný jako nezávislý doplňkový projekt.
 
-Oba addony **nejsou technicky propojené**: mají vlastní manifest, konfiguraci, cache a přihlašovací údaje v instalačním odkazu. Nastavení ani zvolený režim se mezi nimi automaticky nesdílí. Lze je instalovat a testovat samostatně.
+Oba addony **nejsou technicky propojené**: mají vlastní manifest, konfiguraci a cache. Nastavení ani zvolený režim se mezi nimi automaticky nesdílí. Lze je instalovat a testovat samostatně.
 
 <p>
   <a href="https://130.61.49.108:8443/configure"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-Konfigurace-38BDF8?style=for-the-badge&labelColor=0284C7" alt="Sosáč Subtitles konfigurace" /></a>
   <a href="https://github.com/CaseyCZ/stremio.sosac.subtitles"><img src="https://img.shields.io/badge/Sos%C3%A1%C4%8D%20Subtitles-GitHub-38BDF8?style=for-the-badge&labelColor=0284C7&logo=github&logoColor=white" alt="Sosáč Subtitles GitHub" /></a>
 </p>
+
+## Soukromí a konfigurace
+
+Nové instalace hlavního addonu používají bezpečnější šifrovanou konfiguraci. Starší instalační odkazy zůstávají podporované kvůli zpětné kompatibilitě. Instalační odkaz je stále citlivý a neměl by se sdílet.
 
 ## Verzování
 
