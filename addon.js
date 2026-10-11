@@ -209,7 +209,32 @@ function episodeSeriesTitles(item) {
 }
 function safeIsoDate(value) {
   if (value === null || value === undefined || value === '') return undefined;
-  const date = new Date(value);
+  const raw = String(value).trim();
+  const local = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  let date;
+  if (local) {
+    const [, dayRaw, monthRaw, yearRaw, hourRaw = '0', minuteRaw = '0', secondRaw = '0'] = local;
+    const day = Number(dayRaw);
+    const month = Number(monthRaw);
+    const year = Number(yearRaw);
+    const hour = Number(hourRaw);
+    const minute = Number(minuteRaw);
+    const second = Number(secondRaw);
+    date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day ||
+      date.getUTCHours() !== hour ||
+      date.getUTCMinutes() !== minute ||
+      date.getUTCSeconds() !== second
+    ) {
+      console.warn('[meta] Přeskakuji neplatné datum epizody:', value);
+      return undefined;
+    }
+  } else {
+    date = new Date(value);
+  }
   if (Number.isNaN(date.getTime())) {
     console.warn('[meta] Přeskakuji neplatné datum epizody:', value);
     return undefined;
