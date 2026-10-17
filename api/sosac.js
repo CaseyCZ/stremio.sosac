@@ -171,23 +171,6 @@ function normalizeRating(value) {
   return rating;
 }
 
-function imdbIdFromItem(item) {
-  if (!item || typeof item !== 'object') return null;
-  const candidates = [item.imdb, item.imdb_id, item.imdbId, item.imdbid, item.imdbID, item.m];
-  for (const value of candidates) {
-    if (typeof value === 'string') {
-      const text = value.trim();
-      const direct = text.match(/\btt\d{5,10}\b/i);
-      if (direct) return direct[0].toLowerCase();
-      if (/^\d{5,10}$/.test(text)) return `tt${text.padStart(7, '0')}`.toLowerCase();
-    } else if (typeof value === 'number' && Number.isInteger(value) && value >= 10000) {
-      const text = String(value);
-      if (text.length <= 10) return `tt${text.padStart(7, '0')}`.toLowerCase();
-    }
-  }
-  return null;
-}
-
 // V official Kodi Sosáči je r = rating a m = IMDb.
 // Kvůli kompatibilitě s novějšími odpověďmi ponecháváme m jako nouzový rating
 // jen tehdy, když vypadá skutečně jako hodnocení (0–100), nikoli jako IMDb ID.
@@ -208,10 +191,9 @@ function movieToMeta(item, language = 'cs') {
   const year = numberOrUndefined(item.y);
   const rating = ratingFromItem(item);
   const durationSeconds = numberOrUndefined(item.dl);
-  const id = imdbIdFromItem(item) || `sosac_m_${item._id}`;
 
   return {
-    id,
+    id: `sosac_m_${item._id}`,
     type: 'movie',
     name,
     poster: moviePoster(item),
@@ -224,7 +206,7 @@ function movieToMeta(item, language = 'cs') {
     genres: Array.isArray(item.g) ? item.g.filter(Boolean) : [],
     cast: Array.isArray(item.f) ? item.f.filter(Boolean) : [],
     director: Array.isArray(item.s) ? item.s.filter(Boolean).join(', ') : firstText(item.s) || undefined,
-    behaviorHints: { defaultVideoId: id }
+    behaviorHints: { defaultVideoId: `sosac_m_${item._id}` }
   };
 }
 
@@ -235,10 +217,9 @@ function seriesToMeta(item, language = 'cs') {
 
   const year = numberOrUndefined(item.y);
   const rating = ratingFromItem(item);
-  const id = imdbIdFromItem(item) || `sosac_s_${item._id}`;
 
   return {
-    id,
+    id: `sosac_s_${item._id}`,
     type: 'series',
     name,
     poster: seriesPoster(item),
